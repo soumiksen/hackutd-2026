@@ -1,0 +1,19 @@
+<!doctype html><meta charset=utf-8><title>Fake MockPark (test only)</title>
+<div id=app></div>
+<script>
+const q = new URLSearchParams(location.search);
+const F = ['plate','state','make','model','color','host_unit','host_name','guest_name','phone','email','duration_hours'];
+const app = document.getElementById('app');
+if (q.get('captcha') === 'on') app.innerHTML = '<div data-testid="captcha">Type: QXZ</div>';
+else {
+  app.innerHTML = '<form id=f>' + F.map(n => `<label>${n}<input name="${n}" value="${q.get(n)||''}"></label>`).join('') +
+    '<button type="submit">Register</button></form>';
+  f.onsubmit = e => {
+    e.preventDefault();
+    if (q.get('fail') === '1') { app.innerHTML = '<div data-testid="error">Portal error</div>'; return; }
+    const h = parseInt(f.duration_hours.value || '1');
+    const exp = new Date(Date.now() + h * 3600e3).toISOString().replace(/\.\d+Z$/, 'Z');
+    app.innerHTML = `<h1>Done</h1><p data-testid="confirmation-number">PK-AB12CD</p><p data-testid="expires-at">${exp}</p>`;
+  };
+}
+</script>

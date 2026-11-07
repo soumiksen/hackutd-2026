@@ -1,0 +1,8 @@
+.env
+.venv/
+parkour.db*
+proofs/
+__pycache__/
+node_modules/
+messenger/dist/
+.pytest_cache/

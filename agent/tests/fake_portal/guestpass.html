@@ -1,0 +1,20 @@
+<!doctype html><meta charset=utf-8><title>Fake GuestPass (test only)</title>
+<div id=app></div>
+<script>
+const app = document.getElementById('app');
+function step1() {
+  app.innerHTML = `<label for=tag>Vehicle tag</label><input id=tag><label for=vname>Visitor name</label><input id=vname>
+   <button id=next type=button>Next</button>`;
+  next.onclick = step2;
+}
+function step2() {
+  app.innerHTML = `<label for=hrs>Hours</label><select id=hrs><option value="6">6</option><option value="12">12</option><option value="24">24</option></select>
+   <label for=cp>Contact number</label><input id=cp><label for=unit>Unit visiting</label><input id=unit>
+   <button id=fin type=button>Finish</button>`;
+  fin.onclick = () => {
+    const exp = new Date(Date.now() + parseInt(hrs.value) * 3600e3).toISOString().replace(/\.\d+Z$/, 'Z');
+    app.innerHTML = `<p data-testid="confirmation-number">PK-GP9Z8Y</p><p data-testid="expires-at">${exp}</p>`;
+  };
+}
+step1();
+</script>

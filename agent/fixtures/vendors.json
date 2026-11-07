@@ -1,0 +1,5 @@
+{"vendors":[
+ {"vendor_id":"mockpark","name":"MockPark","fields":["plate","state","make","model","color","host_unit","host_name","guest_name","phone","email","duration_hours"],
+  "selectors":{"plate":"input[name=plate]","state":"input[name=state]","make":"input[name=make]","model":"input[name=model]","color":"input[name=color]","host_unit":"input[name=host_unit]","host_name":"input[name=host_name]","guest_name":"input[name=guest_name]","phone":"input[name=phone]","email":"input[name=email]","duration_hours":"input[name=duration_hours]","submit":"button[type=submit]"}},
+ {"vendor_id":"guestpass","name":"GuestPass","fields":["plate","state","make","model","color","host_unit","host_name","guest_name","phone","email","duration_hours"],"selectors":null}
+]}
