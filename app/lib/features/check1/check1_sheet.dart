@@ -9,8 +9,37 @@ import '../../services/notification_service.dart';
 import '../../services/session.dart';
 import '../status/status_screen.dart';
 
+/// Maverick Place has its own flow (contract endpoint 22): the arrival prompt already asked "park here?", so
+/// saying yes starts it. With saved info it registers straight away; without, the status screen asks for the
+/// resident's phone and then waits while the backend texts the resident.
+const maverickId = 'maverick-place';
+
+Future<void> startMaverick(BuildContext context, WidgetRef ref, Property p) async {
+  final vehicleId = ref.read(sessionProvider).vehicleId;
+  if (vehicleId == null) return showError(context, 'Add a car first.');
+  try {
+    final reg = await ref.read(apiProvider).maverickRegister(vehicleId: vehicleId);
+    await NotificationService.showCheck1(reg.summary);
+    if (context.mounted) {
+      await Navigator.of(context).push(MaterialPageRoute(builder: (_) => StatusScreen(initial: reg)));
+    }
+  } on ApiError catch (e) {
+    if (!context.mounted) return;
+    await showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        icon: const Icon(Icons.do_not_disturb_on_outlined, color: P.tow),
+        title: Text("Can't register at ${p.name}"),
+        content: Text(e.message),
+        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
+      ),
+    );
+  }
+}
+
 /// Starts a registration for a matched property: draft -> Check 1 sheet.
 Future<void> startArrival(BuildContext context, WidgetRef ref, Property p) async {
+  if (p.propertyId == maverickId) return startMaverick(context, ref, p);
   final session = ref.read(sessionProvider);
   final api = ref.read(apiProvider);
   if (!p.hasPortal) {

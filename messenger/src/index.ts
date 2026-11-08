@@ -10,7 +10,9 @@ import { imessage } from "spectrum-ts/providers/imessage";
 
 const PORT = Number(process.env.MESSENGER_PORT ?? 8790);
 const KEY = process.env.INTERNAL_API_KEY ?? "";
-const EVENTS = new Set(["check1_prompt", "needs_user", "confirmed", "failed", "expiry_reminder"]);
+const EVENTS = new Set(["check1_prompt", "needs_user", "confirmed", "failed", "expiry_reminder", "resident_request"]);
+const BACKEND_URL = (process.env.BACKEND_URL ?? "http://localhost:8000").replace(/\/$/, "");
+const INBOUND = (process.env.PHOTON_INBOUND ?? "stream") !== "off";
 
 let appPromise: ReturnType<typeof start> | null = null;
 function start() {
@@ -68,5 +70,38 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, () => console.log(`messenger listening on :${PORT}`));
+// Replies arrive over Spectrum's own connection, so no public webhook URL is needed. Each text goes to the
+// backend, which decides what it means (YES/NO from the visitor, or a resident's unit and last name).
+async function listen() {
+  for (;;) {
+    try {
+      const app = await getApp();
+      console.log("listening for replies");
+      for await (const [, message] of app.messages) {
+        if (message.direction === "outbound" || message.content.type !== "text") continue;
+        const from = message.sender?.id;
+        if (!from || !/^\+[1-9]\d{6,14}$/.test(from)) continue;
+        try {
+          await fetch(`${BACKEND_URL}/messaging/inbound`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "X-Internal-Key": KEY },
+            body: JSON.stringify({ message_id: message.id, from_phone: from, text: message.content.text }),
+          });
+          console.log("forwarded a reply"); // never log the text or the number
+        } catch (e) {
+          console.error("forward failed:", (e as Error).name);
+        }
+      }
+    } catch (e) {
+      console.error("listen failed, retrying in 5s:", (e as Error).name);
+    }
+    await new Promise((r) => setTimeout(r, 5000));
+  }
+}
+
+server.listen(PORT, () => {
+  console.log(`messenger listening on :${PORT}`);
+  if (INBOUND && process.env.PHOTON_PROJECT_ID && process.env.PHOTON_PROJECT_SECRET && KEY) void listen();
+  else if (INBOUND) console.warn("inbound listening is off: PHOTON_PROJECT_ID, PHOTON_PROJECT_SECRET and INTERNAL_API_KEY are needed");
+});
 process.on("SIGTERM", async () => { server.close(); try { await (await appPromise)?.stop(); } catch {} process.exit(0); });

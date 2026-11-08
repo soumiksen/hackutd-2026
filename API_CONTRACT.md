@@ -26,7 +26,7 @@ Android emulator reaches the host machine at `http://10.0.2.2:8000`. A real phon
 |---|---|---|
 | `API_BASE_URL` | app (`--dart-define`) | Backend URL |
 | `PUBLIC_BASE_URL` | backend | Public tunnel URL of the API (for Photon webhooks and handoff links) |
-| `DATABASE_URL` | backend | Default `sqlite:///./parkour.db` |
+| `DATABASE_URL` | backend | Default `sqlite:///./parkour.db`. Only caches and logs (LLM cache, message log, plans, receipts) live here now |
 | `NVIDIA_API_KEY` | backend | Key (`nvapi-...`) from build.nvidia.com |
 | `NVIDIA_BASE_URL` | backend | `https://integrate.api.nvidia.com/v1` |
 | `NEMOTRON_MODEL` | backend | Agent text model, default `nvidia/nemotron-3-super-120b-a12b` |
@@ -36,20 +36,29 @@ Android emulator reaches the host machine at `http://10.0.2.2:8000`. A real phon
 | `PHOTON_WEBHOOK_SECRET` | backend | Webhook signing secret (shown once when registering) |
 | `MESSENGER_URL` | backend | Default `http://localhost:8790` |
 | `INTERNAL_API_KEY` | backend + messenger | Shared secret on `X-Internal-Key` for backend-to-messenger calls |
+| `BACKEND_URL` | messenger | Where the sidecar forwards incoming replies. Default `http://localhost:8000` |
+| `PHOTON_INBOUND` | messenger | `stream` (default) listens for replies over Photon's own connection, no public URL needed; `off` disables it |
 | `MOCK_PORTAL_URL` | backend | Default `http://localhost:8001` |
 | `DEMO_MODE` | backend | `true` returns cached LLM answers for the demo inputs |
+| `SPACETIMEDB_URI` | backend | SpacetimeDB host. Default `http://127.0.0.1:3000` (local `spacetime start`). Required: accounts, cars, saved places, history and registrations all live there |
+| `SPACETIMEDB_DATABASE` | backend | Database name the module is published as. Default `parkour` |
+| `SPACETIMEDB_TOKEN` | backend | Token of the identity that published the module (the database owner). Secret |
+| `REQUIRE_AUTH` | backend | `true` = reject requests without a valid session token. Default `false` keeps anonymous `X-User-Id` devices working |
 | `DEMO_PORTAL_PARAMS` | backend | Optional. Extra query string appended to every portal URL (for example `captcha=on`) so the demo can trigger Check 2 |
 
 ---
 
 ## 2. Conventions
 
-- **Auth:** none. The app creates a random UUID once and sends it as header `X-User-Id` on every request. The backend never takes `user_id` from query or body.
+- **Auth:** two modes, and the backend never takes `user_id` from query or body.
+  - *Signed in:* `Authorization: Bearer <token>` from `POST /auth/signup` or `/auth/signin`. The token is valid 30 days and is the only way to act as an account.
+  - *Anonymous device:* the app creates a random UUID once and sends it as `X-User-Id`. Works unless `REQUIRE_AUTH=true`. An id that belongs to an account is refused without its token (`401 unauthorized`).
+  - Signing up while sending `X-User-Id` of an existing anonymous profile keeps that profile's cars and history.
 - **Content type:** JSON, except photo uploads (`multipart/form-data`, file field named `photo`).
 - **Timestamps:** ISO 8601 UTC strings, e.g. `2026-11-07T23:30:00Z`.
 - **IDs:** strings. `user_id`, `vehicle_id`, `property_id`, `registration_id`, `plan_id`.
 - **Errors:** HTTP 4xx/5xx with body `{"error": {"code": "<snake_case_code>", "message": "<human text>"}}`.
-- **Error codes in use:** `validation_error`, `not_found`, `consent_required`, `unknown_domain`, `wrong_state`, `rate_limited`, `llm_unavailable`, `portal_failed`.
+- **Error codes in use:** `validation_error`, `not_found`, `consent_required`, `unknown_domain`, `wrong_state`, `rate_limited`, `llm_unavailable`, `portal_failed`, `unauthorized` (401), `conflict` (409, email already used), `storage_unavailable` (503). `rate_limited` also means 429 from the resident-text limit. Registration `error.code` can also be `resident_declined` or `resident_no_reply`.
 
 ---
 
@@ -60,12 +69,12 @@ Android emulator reaches the host machine at `http://10.0.2.2:8000`. A real phon
 | `role` | `resident`, `visitor` |
 | `notify_channel` | `app`, `message`, `both` |
 | `registration.status` | `drafted`, `awaiting_confirm`, `submitting`, `needs_user`, `confirmed`, `failed`, `cancelled`, `expired`, `finished` |
-| `needs_user.reason` | `captcha`, `missing_info`, `rule_conflict`, `payment` |
+| `needs_user.reason` | `captcha`, `missing_info`, `rule_conflict`, `payment`, `resident_info` (waiting for a resident to text back) |
 | `step.status` | `pending`, `running`, `done`, `error` |
-| `vendor_id` | `mockpark`, `guestpass`, or `null` for permit-only or gated properties |
+| `vendor_id` | `mockpark`, `guestpass`, `parkva` (Maverick Place, hard-coded flow), or `null` for permit-only or gated properties |
 | `confirm.channel` | `app`, `message` |
 | `campus` | `UTA`, `UTD` |
-| `messaging event` | `check1_prompt`, `needs_user`, `confirmed`, `failed`, `expiry_reminder` |
+| `messaging event` | `check1_prompt`, `needs_user`, `confirmed`, `failed`, `expiry_reminder`, `resident_request` (text to a resident) |
 
 **Step names** in `registration.steps[].name`: `match_property`, `open_portal`, `fill_form`, `submit`, `capture_proof`.
 
@@ -148,6 +157,20 @@ Android emulator reaches the host machine at `http://10.0.2.2:8000`. A real phon
 - `proof` when confirmed: `{"confirmation_number": "PK-8F3K2A", "expires_at": "...", "screenshot_urls": ["/proofs/reg_123/confirmation.png"]}`.
 - `error` when failed: `{"code": "portal_failed", "message": "..."}`.
 
+### Saved place (remembered parking)
+```json
+{"place_id": "pl_1a2b3c4d5e6f7a8b", "property_id": "utd-001", "property_name": "Northside Apartments",
+ "unit": "214", "host_name": "Jordan Park", "vehicle_id": "veh_123", "plate": "ABC1234", "duration_hours": 12,
+ "label": "", "uses": 2, "first_used_at": "2026-11-07T23:30:00Z", "last_used_at": "2026-11-08T23:30:00Z"}
+```
+Created when a registration is confirmed; the same property, unit and host again just raises `uses`. A draft with no host unit (and `POST /maverick-place/register` with no `unit`/`resident_last_name`) is prefilled from the most recently used saved place at that property.
+
+### History item
+`{registration_id, property_id, property_name, plate, unit, status, confirmation_number, expires_at, created_at, updated_at}` (empty string when unknown). One per registration attempt; dry runs are not recorded.
+
+### User (extra field on responses)
+`has_account` (bool) is added to User responses. It is `false` for anonymous devices.
+
 ### Parking plan (Flow 2)
 ```json
 {
@@ -194,9 +217,20 @@ Android emulator reaches the host machine at `http://10.0.2.2:8000`. A real phon
 | 19 | POST | `/checkout/mock` | `{"plan_id":"plan_123","amount_usd":4.35}` | `{"receipt_id","amount_usd","paid_at"}` | app |
 | 20 | POST | `/messaging/webhook` | Photon event, signed | `{"ok":true}` | Photon (not the app) |
 | 21 | GET | `/proofs/{registration_id}/{filename}` | none | static image | app |
+| 23 | POST | `/auth/signup` | `{email, password, name, phone, consent_register?, spending_cap_usd?, notify_channel?}` | `{user: User, token, expires_at}` | app |
+| 24 | POST | `/auth/signin` | `{email, password}` | `{user: User, token, expires_at}` | app |
+| 25 | POST | `/auth/signout` | none (Bearer) | `{"ok":true}` | app |
+| 26 | POST | `/auth/password` | `{current_password, new_password}` (Bearer) | `{"ok":true}`; other sessions are signed out | app |
+| 27 | PATCH | `/users/me` | any of `{name, phone, consent_register, spending_cap_usd, notify_channel}` | User | app |
+| 28 | DELETE | `/users/me` | none | `{"ok":true}`; deletes profile, account, cars, saved places, history, registrations | app |
+| 29 | GET | `/places?property_id=` | query (optional) | `{"places":[Saved place]}` newest first | app |
+| 30 | PATCH / DELETE | `/places/{place_id}` | `{"label":"..."}` / none | Saved place / `{"ok":true}` | app |
+| 31 | GET | `/history?limit=` | query | `{"history":[History item]}` newest first | app |
+| 32 | POST | `/messaging/inbound` | `{message_id?, from_phone, text}` with header `X-Internal-Key` | `{"ok":true}` | messenger sidecar (not the app) |
 | 22 | POST | `/maverick-place/register` | `{vehicle_id, unit, resident_last_name, confirm:true, guest?:{first_name,last_name,email}, dry_run?}` | Registration (`submitting`, property `maverick-place`) | app |
 
 Notes:
+- **Maverick Place (`maverick-place`, vendor `parkva`) appears in `GET /properties`** so the app's geofence sees it. Its flow, end to end: the app's arrival prompt says yes, the app calls #22 with only `vehicle_id`. If this user has a saved unit and resident for it, registration starts at once. If not, #22 returns a registration with status `needs_user`, reason `missing_info`, `field: "resident_phone"`: the app asks for the resident's phone and sends it with #14 `{"field":"resident_phone","value":"+1..."}`. The backend texts the resident (event `resident_request`, once per request; max 3 per hour per person) asking for their unit and last name, and the registration becomes `needs_user` with reason `resident_info`. The resident's text reply (unit and last name, or NO) arrives through #20 or #32. A good reply sends it to the worker; NO fails it (`resident_declined`); 30 minutes of silence fails it (`resident_no_reply`). The unit and last name are saved, so the next visit needs no questions.
 - #22 is a hard-coded flow for the real Maverick Place visitor page (`app.parkva.com`). It has no draft step: the request itself is the user's approval, so `confirm` must be `true` and `consent_register` must be true (else `403 consent_required`). Poll with #13; Check 2 uses `/answer` (`host_unit`, `host_name`) as usual. `dry_run: true` fills the form and stops before submit (ends `cancelled`). Duration is fixed by the site (Day Pass).
 - `POST /registrations/draft` never starts the agent. Only #11 does, and only if `consent_register` is true (else `403 consent_required`).
 - Starting #11 when the status is not `awaiting_confirm` returns `409 wrong_state`.
@@ -291,3 +325,6 @@ Demo users' real phone numbers are **never** committed. `demo.json` holds `phone
 | 2026-11-07 | Initial contract. Adds `/users`, `/vehicles`, `/messaging/webhook`, `X-User-Id` header, Photon messenger service, Nemotron env vars | PM |
 | 2026-11-07 | Adds optional `DEMO_PORTAL_PARAMS` env var so the backend can trigger `captcha=on` / `fail=1` for demos | Backend |
 | 2026-11-07 | Adds endpoint 22 `POST /maverick-place/register` (hard-coded real-portal flow, `app.parkva.com` allowed for this flow only) | Backend |
+| 2026-11-07 | Adds accounts (endpoints 23-28), saved places and history (29-31), Bearer sessions, SpacetimeDB storage, env vars `SPACETIMEDB_*` and `REQUIRE_AUTH`, error codes `unauthorized`/`conflict`/`storage_unavailable` | Backend |
+| 2026-11-08 | Registration state, drafting, rule checks, consent gate, saved places and history moved into the SpacetimeDB module; the browser runner is now a worker that claims `submitting` registrations. HTTP contract unchanged. SQLite fallback for user data removed | Backend |
+| 2026-11-08 | Maverick Place arrival flow: property `maverick-place` (vendor `parkva`) in the list, `needs_user.reason` `resident_info`, `resident_phone` answer field, messaging event `resident_request`, internal `POST /messaging/inbound`, messenger env `BACKEND_URL`/`PHOTON_INBOUND`, error codes `resident_declined`/`resident_no_reply` | Backend |

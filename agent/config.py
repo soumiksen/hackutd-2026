@@ -41,6 +41,15 @@ class Settings:
     def demo_portal_params(self): return _get("DEMO_PORTAL_PARAMS")
 
     @property
+    def spacetimedb_uri(self): return _get("SPACETIMEDB_URI", "http://127.0.0.1:3000").rstrip("/")
+    @property
+    def spacetimedb_database(self): return _get("SPACETIMEDB_DATABASE", "parkour")
+    @property
+    def spacetimedb_token(self): return _get("SPACETIMEDB_TOKEN")
+    @property
+    def require_auth(self): return _get("REQUIRE_AUTH", "false").lower() == "true"
+
+    @property
     def db_path(self) -> str:
         url = self.database_url
         path = url.split("sqlite:///", 1)[1] if url.startswith("sqlite:///") else url

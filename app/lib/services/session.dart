@@ -16,6 +16,8 @@ class Session {
   static const _kVehicleId = 'vehicle_id';
   static const _kName = 'user_name';
   static const _kDemo = 'demo_mode';
+  static const _kToken = 'auth_token';
+  static const _kEmail = 'auth_email';
 
   /// Random UUID generated once, sent as X-User-Id (contract section 2).
   String get userId {
@@ -25,6 +27,26 @@ class Session {
       prefs.setString(_kUserId, id);
     }
     return id;
+  }
+
+  /// Session token from sign-up / sign-in. Stored in shared_preferences (browser storage on web).
+  String? get token => prefs.getString(_kToken);
+  String? get email => prefs.getString(_kEmail);
+  bool get signedIn => token != null;
+
+  Future<void> saveSession({required String token, required String email, required String name}) async {
+    await prefs.setString(_kToken, token);
+    await prefs.setString(_kEmail, email);
+    await prefs.setString(_kName, name);
+  }
+
+  /// Forget the account on this device but keep the device id (so an anonymous profile is not orphaned).
+  Future<void> clearSession() async {
+    await prefs.remove(_kToken);
+    await prefs.remove(_kEmail);
+    await prefs.remove(_kOnboarded);
+    await prefs.remove(_kVehicleId);
+    await prefs.remove(_kName);
   }
 
   bool get onboarded => prefs.getBool(_kOnboarded) ?? false;
@@ -60,7 +82,18 @@ class Session {
 
 final prefsProvider = Provider<SharedPreferences>((ref) => throw UnimplementedError('overridden in main'));
 final sessionProvider = Provider<Session>((ref) => Session(ref.watch(prefsProvider)));
-final apiProvider = Provider<ApiClient>((ref) => ApiClient(ref.watch(sessionProvider).userId));
+/// Bumped when the server says the session is no longer valid; the app then shows sign-in again.
+final authTick = StateProvider<int>((ref) => 0);
+
+final apiProvider = Provider<ApiClient>((ref) {
+  final session = ref.watch(sessionProvider);
+  final api = ApiClient(session.userId, token: session.token);
+  api.onUnauthorized = () async {
+    await session.clearSession();
+    ref.read(authTick.notifier).state++;
+  };
+  return api;
+});
 
 /// Bumped to refresh lists after a registration changes.
 final refreshTick = StateProvider<int>((ref) => 0);

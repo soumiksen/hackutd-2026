@@ -3,13 +3,14 @@ import asyncio
 import hashlib
 import hmac
 import logging
+import re
 import time
 
 import httpx
 
 from .. import db, errors
 from ..config import settings
-from ..models import Intent
+from ..models import Intent, ResidentDetails
 from . import llm, proofs
 
 log = logging.getLogger("parkour.messaging")
@@ -113,8 +114,74 @@ async def classify(text: str) -> str:
         return "other"
 
 
-async def reply(phone: str, text: str):
-    await send("needs_user", phone, text)  # helper replies reuse the needs_user event name
+async def reply(phone: str, text: str, event: str = "needs_user"):
+    await send(event, phone, text)  # helper replies reuse the needs_user event name
+
+
+# ---------- Maverick Place: texting the resident ----------
+DECLINE = re.compile(r"^\s*(no|nope|nah|decline|deny|stop|not expecting)\b", re.I)
+STOP_WORDS = {"unit", "apt", "apartment", "number", "no", "last", "name", "is", "my", "and", "the", "its", "it", "im",
+              "i", "am", "this", "hi", "hello", "hey", "yes", "yeah", "yep", "thanks", "thank", "you", "please",
+              "confirm", "confirmed", "sure", "ok", "okay", "here", "for", "of", "a", "an", "mine", "ours", "we", "are"}
+UNIT_RE = re.compile(r"(?<![A-Za-z0-9])(\d{1,4})(?:\s*-?\s*([A-Za-z])(?![A-Za-z'\u2019\-]))?(?![A-Za-z0-9])")
+
+
+def parse_resident_reply(text: str) -> tuple[str, str] | None:
+    """'227A Adhikary', 'Unit 227-A, last name Adhikary', 'Adhikary 227 a' -> ('227A', 'Adhikary'). None if unclear."""
+    t = (text or "")[:300]
+    units = [m for m in UNIT_RE.finditer(t)]
+    if len(units) != 1:
+        return None
+    m = units[0]
+    unit = m.group(1) + (m.group(2) or "").upper()
+    rest = t[:m.start()] + " " + t[m.end():]
+    words = [w for w in re.findall(r"[A-Za-z][A-Za-z'\-]+", rest.replace("\u2019", "'"))
+             if w.lower().replace("'", "") not in STOP_WORDS and len(w) >= 2]
+    if len(words) != 1:
+        return None
+    return unit, words[0].strip("'-").title() if words[0].islower() else words[0].strip("'-")
+
+
+async def parse_resident_reply_llm(text: str) -> tuple[str, str] | None:
+    try:
+        out = await llm.chat_json(
+            "resident_details",
+            "A resident of an apartment complex replied to a text asking for their unit number and last name. "
+            'Return {"unit": "...", "last_name": "..."}; use an empty string for anything not clearly stated.',
+            f'Reply: "{text[:300]}"', ResidentDetails)
+    except errors.ApiError:
+        return None
+    return (out.unit.strip(), out.last_name.strip()) if out.unit.strip() and out.last_name.strip() else None
+
+
+def ask_resident(user: dict, reg: dict):
+    """Text the resident whose number the visitor gave. Only the visitor's first name and the place are shared."""
+    phone = reg["_answers"]["resident_phone"]
+    first = (user["name"].split() or ["Someone"])[0]
+    text = (f"Hi, {first} is visiting and asked to register a guest car at Maverick Place. Reply with your unit "
+            "number and last name (for example: 227A Adhikary), or NO if you aren't expecting a guest.")
+    spawn(send("resident_request", phone, text))
+
+
+async def handle_resident_reply(reg: dict, text: str):
+    from . import drafts, worker
+    from .. import store as store_mod
+    s, rid, phone = store_mod.get_store(), reg["registration_id"], reg["_answers"]["resident_phone"]
+    if DECLINE.match(text):
+        s.resident_decline(rid, "resident_declined", "The resident said they aren't expecting a guest.")
+        await reply(phone, "Okay, no guest was registered.", "resident_request")
+        if (user := s.get_user(reg["_user_id"])):
+            notify("failed", user, drafts.load(rid))
+        return
+    parsed = parse_resident_reply(text) or await parse_resident_reply_llm(text)
+    if not parsed:
+        await reply(phone, "Sorry, I couldn't read that. Reply with your unit number and last name, like "
+                           "227A Adhikary, or NO to decline.", "resident_request")
+        return
+    unit, last = parsed
+    s.resident_reply(rid, unit, last)  # the registration goes to the worker
+    worker.wake()
+    await reply(phone, f"Thanks! Registering the guest for unit {unit}.", "resident_request")
 
 
 async def handle_inbound(payload: dict):
@@ -131,6 +198,10 @@ async def handle_inbound(payload: dict):
             db.execute("INSERT INTO webhook_seen (message_id) VALUES (?)", (mid,))
         phone = (msg.get("sender") or {}).get("id")
         text = (msg["content"].get("text") or "").strip()
+        pending = drafts.pending_resident(phone) if phone else None
+        if pending:  # this number is a resident we texted: their reply answers that registration
+            await handle_resident_reply(pending, text)
+            return
         user = drafts.user_by_phone(phone) if phone else None
         if not user:
             return  # unknown sender: ignore

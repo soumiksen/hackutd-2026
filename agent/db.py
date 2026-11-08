@@ -24,6 +24,12 @@ CREATE TABLE IF NOT EXISTS receipts (receipt_id TEXT PRIMARY KEY, plan_id TEXT N
 CREATE TABLE IF NOT EXISTS llm_cache (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS message_log (at TEXT NOT NULL, event TEXT NOT NULL, ok INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS webhook_seen (message_id TEXT PRIMARY KEY);
+CREATE TABLE IF NOT EXISTS credentials (user_id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL, created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL,
+  created_at TEXT NOT NULL, expires_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS saved_places (place_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, data TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS parking_history (registration_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, data TEXT NOT NULL);
 """
 
 

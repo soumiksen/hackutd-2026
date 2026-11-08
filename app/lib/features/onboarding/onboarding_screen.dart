@@ -30,11 +30,15 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   final name = TextEditingController();
   final phone = TextEditingController(text: '+1');
   final email = TextEditingController();
+  final password = TextEditingController();
+  bool showPassword = false;
+  bool signingIn = false; // true while the "I already have an account" form is shown
   bool consent = true;
   NotifyChannel channel = NotifyChannel.both;
 
   final carForm = GlobalKey<FormState>();
   final profileForm = GlobalKey<FormState>();
+  final signInForm = GlobalKey<FormState>();
 
   Future<void> pickPhoto(ImageSource source) async {
     final f = await ImagePicker().pickImage(source: source, maxWidth: 1600, imageQuality: 85);
@@ -70,22 +74,57 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     if (!profileForm.currentState!.validate()) return;
     setState(() => busy = true);
     final api = ref.read(apiProvider);
+    final session = ref.read(sessionProvider);
     try {
-      await api.upsertUser(User(
+      // Creates the account (stored in SpacetimeDB by the backend). The device id rides along, so nothing is lost.
+      final auth = await api.signUp(
+        email: email.text.trim(),
+        password: password.text,
         name: name.text.trim(),
         phone: phone.text.replaceAll(RegExp(r'[\s()-]'), ''),
-        email: email.text.trim(),
         consentRegister: consent,
         notifyChannel: channel,
-      ));
-      final v = await api.createVehicle(Vehicle(
-        plate: plate.text.trim().toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), ''),
-        state: state.text.trim().toUpperCase(),
-        make: make.text.trim(),
-        model: model.text.trim(),
-        color: color.text.trim(),
-      ));
-      await ref.read(sessionProvider).completeOnboarding(vehicleId: v.vehicleId!, name: name.text.trim());
+      );
+      api.setToken(auth.token);
+      await session.saveSession(token: auth.token, email: auth.user.email, name: auth.user.name);
+      await _saveCarAndFinish();
+    } catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  Future<void> _saveCarAndFinish() async {
+    final v = await ref.read(apiProvider).createVehicle(Vehicle(
+      plate: plate.text.trim().toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), ''),
+      state: state.text.trim().toUpperCase(),
+      make: make.text.trim(),
+      model: model.text.trim(),
+      color: color.text.trim(),
+    ));
+    final session = ref.read(sessionProvider);
+    await session.completeOnboarding(vehicleId: v.vehicleId!, name: session.firstName.isEmpty ? name.text.trim() : session.firstName);
+    widget.onDone();
+  }
+
+  /// Returning user: sign in, load their saved cars, skip the questions they already answered.
+  Future<void> doSignIn() async {
+    if (!signInForm.currentState!.validate()) return;
+    setState(() => busy = true);
+    final api = ref.read(apiProvider);
+    final session = ref.read(sessionProvider);
+    try {
+      final auth = await api.signIn(email.text.trim(), password.text);
+      api.setToken(auth.token);
+      await session.saveSession(token: auth.token, email: auth.user.email, name: auth.user.name);
+      final cars = await api.listVehicles();
+      if (cars.isEmpty) {
+        // Signed in but no car saved yet: ask for one, then finish.
+        if (mounted) setState(() { signingIn = false; step = 1; });
+        return;
+      }
+      await session.completeOnboarding(vehicleId: cars.first.vehicleId!, name: auth.user.name);
       widget.onDone();
     } catch (e) {
       if (mounted) showError(context, e);
@@ -100,16 +139,20 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   Widget build(BuildContext context) {
     final t = Theme.of(context).textTheme;
     final pages = [_welcome(t), _photo(t), _car(t), _profile(t)];
+    final backAction = signingIn ? () => setState(() => signingIn = false) : () => setState(() => step -= 1);
     return Scaffold(
       body: SafeArea(
         child: PhoneFrame(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              if (step > 0)
+              if (signingIn)
                 Row(children: [
-                  IconButton(
-                      onPressed: busy ? null : () => setState(() => step -= 1), icon: const Icon(Icons.arrow_back)),
+                  IconButton(onPressed: busy ? null : backAction, icon: const Icon(Icons.arrow_back)),
+                ])
+              else if (step > 0)
+                Row(children: [
+                  IconButton(onPressed: busy ? null : backAction, icon: const Icon(Icons.arrow_back)),
                   Expanded(
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(9),
@@ -119,7 +162,9 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                   ),
                   const SizedBox(width: 12),
                 ]),
-              Expanded(child: AnimatedSwitcher(duration: const Duration(milliseconds: 220), child: pages[step])),
+              Expanded(
+                  child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 220), child: signingIn ? _signIn(t) : pages[step])),
             ]),
           ),
         ),
@@ -155,7 +200,54 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             width: double.infinity,
             child: FilledButton(onPressed: () => setState(() => step = 1), child: const Text('Get started')),
           ),
+          const SizedBox(height: 4),
+          Center(
+            child: TextButton(
+              onPressed: () => setState(() => signingIn = true),
+              child: const Text('I already have an account'),
+            ),
+          ),
         ],
+      );
+
+  Widget _signIn(TextTheme t) => Form(
+        key: signInForm,
+        child: ListView(key: const ValueKey('signin'), children: [
+          const SizedBox(height: 16),
+          Text('Welcome back', style: t.headlineMedium),
+          const SizedBox(height: 8),
+          Text('Sign in to get your cars and saved places back.', style: t.bodyLarge?.copyWith(color: P.muted)),
+          const SizedBox(height: 20),
+          TextFormField(
+            controller: email,
+            keyboardType: TextInputType.emailAddress,
+            autofillHints: const [AutofillHints.email],
+            decoration: const InputDecoration(labelText: 'Email'),
+            validator: (v) => (v ?? '').contains('@') ? null : 'Enter your email',
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            controller: password,
+            obscureText: !showPassword,
+            autofillHints: const [AutofillHints.password],
+            decoration: InputDecoration(
+              labelText: 'Password',
+              suffixIcon: IconButton(
+                icon: Icon(showPassword ? Icons.visibility_off_outlined : Icons.visibility_outlined),
+                onPressed: () => setState(() => showPassword = !showPassword),
+              ),
+            ),
+            validator: required,
+            onFieldSubmitted: (_) => busy ? null : doSignIn(),
+          ),
+          const SizedBox(height: 24),
+          FilledButton(
+            onPressed: busy ? null : doSignIn,
+            child: busy
+                ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white))
+                : const Text('Sign in'),
+          ),
+        ]),
       );
 
   Widget _photo(TextTheme t) => Column(
@@ -244,10 +336,25 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           TextFormField(controller: color, decoration: const InputDecoration(labelText: 'Color'), validator: required),
           const SizedBox(height: 24),
           FilledButton(
-            onPressed: () {
-              if (carForm.currentState!.validate()) setState(() => step = 3);
-            },
-            child: const Text('Looks right'),
+            onPressed: busy
+                ? null
+                : () async {
+                    if (!carForm.currentState!.validate()) return;
+                    if (ref.read(sessionProvider).signedIn) {
+                      // Signed in on this device already: nothing more to ask, just save the car.
+                      setState(() => busy = true);
+                      try {
+                        await _saveCarAndFinish();
+                      } catch (e) {
+                        if (mounted) showError(context, e);
+                      } finally {
+                        if (mounted) setState(() => busy = false);
+                      }
+                    } else {
+                      setState(() => step = 3);
+                    }
+                  },
+            child: Text(ref.read(sessionProvider).signedIn ? 'Save and finish' : 'Looks right'),
           ),
         ]),
       );
@@ -258,7 +365,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           const SizedBox(height: 16),
           Text('About you', style: t.headlineMedium),
           const SizedBox(height: 8),
-          Text('Parking portals ask for these. You type them once.', style: t.bodyLarge?.copyWith(color: P.muted)),
+          Text('Parking portals ask for these. You type them once, and they are saved to your account.',
+              style: t.bodyLarge?.copyWith(color: P.muted)),
           const SizedBox(height: 20),
           TextFormField(
               controller: name,
@@ -278,8 +386,24 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           TextFormField(
             controller: email,
             keyboardType: TextInputType.emailAddress,
-            decoration: const InputDecoration(labelText: 'Email'),
+            autofillHints: const [AutofillHints.newUsername],
+            decoration: const InputDecoration(labelText: 'Email', helperText: 'You sign in with this'),
             validator: (v) => (v ?? '').contains('@') ? null : 'Enter an email',
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            controller: password,
+            obscureText: !showPassword,
+            autofillHints: const [AutofillHints.newPassword],
+            decoration: InputDecoration(
+              labelText: 'Password',
+              helperText: 'At least 8 characters',
+              suffixIcon: IconButton(
+                icon: Icon(showPassword ? Icons.visibility_off_outlined : Icons.visibility_outlined),
+                onPressed: () => setState(() => showPassword = !showPassword),
+              ),
+            ),
+            validator: (v) => (v ?? '').length >= 8 ? null : 'At least 8 characters',
           ),
           const SizedBox(height: 20),
           Card(
@@ -310,7 +434,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             onPressed: busy ? null : finish,
             child: busy
                 ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white))
-                : const Text('Finish'),
+                : const Text('Create account'),
           ),
         ]),
       );

@@ -7,7 +7,22 @@ from . import data
 PRIVATE = {"property_code", "portal_path", "confidence", "last_verified"}
 
 
+# Maverick Place is a real complex with its own hard-coded flow (agent/services/maverick.py). It is added to the
+# list here so the app's geofence and map see it; it is not in data/properties.json and not in the module's rules.
+MAVERICK = {
+    "property_id": "maverick-place", "name": "Maverick Place", "campus": "UTA",
+    "lat": 32.7243415, "lng": -97.1200467, "radius_m": 120,  # 930 Benge Dr, Arlington TX (OpenStreetMap house match)
+    "vendor_id": "parkva", "property_code": None, "portal_path": None,
+    "guest_rules": {"max_nights_per_month": 0, "max_duration_hours": 24, "requires_host_unit": True,
+                    "guest_hours": "Day pass"},
+    "tow_enforced": True,
+    "notes": "First visit: the resident confirms their unit and last name by text. After that it is automatic.",
+    "confidence": 0.9, "last_verified": "2026-11-08",
+}
+
+
 def load_into_db():
+    db.put("properties", "property_id", MAVERICK["property_id"], MAVERICK)
     for p in data.properties():
         db.put("properties", "property_id", p["property_id"], p)
 

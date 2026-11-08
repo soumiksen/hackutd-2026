@@ -349,12 +349,33 @@ class _Check2CardState extends ConsumerState<Check2Card> {
             child: const Text("I'm done"),
           ),
         ],
-      NeedsUserReason.missingInfo => [
+      NeedsUserReason.missingInfo when nu.field == 'resident_phone' => [
           TextField(
             controller: answer,
             autofocus: true,
-            decoration: InputDecoration(labelText: (nu.field ?? 'answer').replaceAll('_', ' ')),
+            keyboardType: TextInputType.phone,
+            decoration: const InputDecoration(
+              labelText: "Resident's phone number",
+              helperText: 'With country code, e.g. +14695550100',
+            ),
           ),
+          const SizedBox(height: 6),
+          Text("We'll text them once to confirm their unit and last name. Nothing else about you is shared.",
+              style: t.bodySmall?.copyWith(color: P.muted)),
+          const SizedBox(height: 10),
+          FilledButton(
+            onPressed: widget.busy
+                ? null
+                : () => widget.onAct(() => api.answerRegistration(id, 'resident_phone', answer.text.trim())),
+            child: const Text('Text the resident'),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton(
+            onPressed: widget.busy ? null : () => widget.onAct(() => api.cancelRegistration(id)),
+            child: const Text('Not now'),
+          ),
+        ],
+      NeedsUserReason.missingInfo => [
           const SizedBox(height: 10),
           FilledButton(
             onPressed: widget.busy
@@ -383,6 +404,14 @@ class _Check2CardState extends ConsumerState<Check2Card> {
             child: const Text('Cancel'),
           ),
         ],
+      NeedsUserReason.residentInfo => [
+          const Center(child: Padding(padding: EdgeInsets.symmetric(vertical: 6), child: CircularProgressIndicator())),
+          const SizedBox(height: 10),
+          OutlinedButton(
+            onPressed: widget.busy ? null : () => widget.onAct(() => api.cancelRegistration(id)),
+            child: const Text('Cancel'),
+          ),
+        ],
       NeedsUserReason.payment => const [],
     };
     return Container(
@@ -403,6 +432,8 @@ class _Check2CardState extends ConsumerState<Check2Card> {
         const SizedBox(height: 10),
         Text(switch (nu.reason) {
           NeedsUserReason.captcha => 'The portal wants a human check',
+          NeedsUserReason.missingInfo when nu.field == 'resident_phone' => "Who are you visiting?",
+          NeedsUserReason.residentInfo => 'Waiting for the resident',
           NeedsUserReason.missingInfo => 'One quick question',
           NeedsUserReason.ruleConflict => 'Guest limit reached',
           NeedsUserReason.payment => 'Payment needed',

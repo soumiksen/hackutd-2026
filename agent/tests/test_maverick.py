@@ -39,8 +39,10 @@ def test_gates(client, mav):
     client.post("/users", json={**USER, "consent_register": False}, headers=H)
     r = client.post("/maverick-place/register", json=body(mav), headers=H)
     assert r.status_code == 403 and r.json()["error"]["code"] == "consent_required"
-    assert client.post("/maverick-place/register", json={"vehicle_id": mav, "confirm": True}, headers=H).status_code == 422
     client.post("/users", json=USER, headers=H)  # consent back on
+    r = client.post("/maverick-place/register", json={"vehicle_id": mav, "confirm": True}, headers=H)
+    # nothing saved yet: no error, it asks for the resident's phone instead
+    assert r.status_code == 200 and r.json()["needs_user"]["field"] == "resident_phone"
     assert client.post("/maverick-place/register", json=body("veh_nope"), headers=H).status_code == 404
 
 
@@ -99,3 +101,151 @@ def test_classify_message():
     assert parkva.classify_message("This plate is already registered here until Nov 8, 8:56 PM CST.") == "already"
     assert parkva.classify_message("This vehicle can't park in this zone") == "error"
     assert parkva.classify_message("Registration failed, not confirmed") == "error"
+
+
+# ---------- first visit: ask the resident by text ----------
+import json as _json
+import time as _time
+
+
+@pytest.fixture
+def sent(monkeypatch):
+    """Capture texts the backend would send through Photon."""
+    from agent.services import messaging
+    out = []
+
+    async def fake_send(event, to_phone, text, attachment_path=None):
+        out.append({"event": event, "to": to_phone, "text": text})
+        return True
+    monkeypatch.setattr(messaging, "send", fake_send)
+
+    async def no_llm(text):  # tests never call the real model
+        return None
+    monkeypatch.setattr(messaging, "parse_resident_reply_llm", no_llm)
+    return out
+
+
+def inbound(client, text, sender="+15557770001", mid=None):
+    from agent.config import settings
+    return client.post("/messaging/inbound", json={"message_id": mid or f"m-{_time.time_ns()}", "from_phone": sender, "text": text},
+                       headers={"X-Internal-Key": settings.internal_api_key})
+
+
+@pytest.fixture
+def first_visit(client, user_vehicle, portal_url, monkeypatch, sent):
+    from agent.services import maverick
+    monkeypatch.setenv("INTERNAL_API_KEY", "internal-test-key")
+    monkeypatch.setattr(maverick, "MAVERICK_URL", f"{portal_url}/parkva")
+    r = client.post("/maverick-place/register", json={"vehicle_id": user_vehicle, "confirm": True}, headers=H)
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def test_maverick_is_in_the_property_list(client, user_vehicle):
+    ps = client.get("/properties?lat=32.7243&lng=-97.1200&limit=3", headers=H).json()["properties"]
+    mp = next(p for p in ps if p["property_id"] == "maverick-place")
+    assert mp["vendor_id"] == "parkva" and mp["distance_m"] < mp["radius_m"] and "property_code" not in mp
+
+
+def test_no_saved_info_asks_for_the_residents_phone(client, first_visit):
+    assert first_visit["status"] == "needs_user"
+    assert first_visit["needs_user"]["reason"] == "missing_info" and first_visit["needs_user"]["field"] == "resident_phone"
+    assert first_visit["property"]["property_id"] == "maverick-place"
+
+
+def test_full_first_visit_flow_through_the_resident(client, user_vehicle, first_visit, sent):
+    rid = first_visit["registration_id"]
+    # the visitor enters the resident's number
+    r = client.post(f"/registrations/{rid}/answer", json={"field": "resident_phone", "value": "+1 (555) 777-0001"}, headers=H)
+    assert r.status_code == 200 and r.json()["needs_user"]["reason"] == "resident_info"
+    assert "0001" in r.json()["needs_user"]["message"]
+    deadline = _time.time() + 5
+    while not sent and _time.time() < deadline:
+        _time.sleep(0.1)
+    assert len(sent) == 1 and sent[0]["event"] == "resident_request" and sent[0]["to"] == "+15557770001"
+    assert "Maya" in sent[0]["text"] and "Maverick Place" in sent[0]["text"] and "unit number and last name" in sent[0]["text"]
+    assert USER["email"] not in sent[0]["text"] and USER["phone"] not in sent[0]["text"]  # nothing private goes to the resident
+    # a stranger's text does nothing
+    assert inbound(client, "227A Adhikary", sender="+15558889999").json() == {"ok": True}
+    _time.sleep(0.6)
+    assert client.get(f"/registrations/{rid}", headers=H).json()["needs_user"]["reason"] == "resident_info"
+    # an unclear reply gets help, not a registration
+    inbound(client, "who is this?")
+    deadline = _time.time() + 5
+    while not any("couldn't read" in m["text"] for m in sent) and _time.time() < deadline:
+        _time.sleep(0.1)
+    assert any("couldn't read" in m["text"] for m in sent)
+    assert client.get(f"/registrations/{rid}", headers=H).json()["status"] == "needs_user"
+    # the resident answers
+    inbound(client, "Hi, it's 101-A, Park")
+    reg = wait_status(client, rid, {"confirmed", "failed", "cancelled"})
+    assert reg["status"] == "confirmed", reg
+    assert reg["host"] == {"name": "Park", "unit": "101A"}  # the page matches 101A and 101-A as the same unit
+    # saved: the next visit asks nobody
+    places = client.get("/places?property_id=maverick-place", headers=H).json()["places"]
+    assert [(p["unit"], p["host_name"]) for p in places] == [("101A", "Park")]
+    again = client.post("/maverick-place/register", json={"vehicle_id": user_vehicle, "confirm": True}, headers=H).json()
+    assert again["status"] == "submitting" and again["needs_user"] is None
+    assert wait_status(client, again["registration_id"], {"confirmed", "failed", "needs_user"})["status"] == "confirmed"
+
+
+def test_resident_declines(client, first_visit, sent):
+    rid = first_visit["registration_id"]
+    client.post(f"/registrations/{rid}/answer", json={"field": "resident_phone", "value": "+15557770001"}, headers=H)
+    inbound(client, "No, I'm not expecting anyone")
+    reg = wait_status(client, rid, {"failed", "confirmed"})
+    assert reg["status"] == "failed" and reg["error"]["code"] == "resident_declined"
+
+
+def test_resident_phone_rules(client, first_visit, sent):
+    rid = first_visit["registration_id"]
+    bad = client.post(f"/registrations/{rid}/answer", json={"field": "resident_phone", "value": "555-1234"}, headers=H)
+    assert bad.status_code == 422
+    own = client.post(f"/registrations/{rid}/answer", json={"field": "resident_phone", "value": USER["phone"]}, headers=H)
+    assert own.status_code == 422 and "own number" in own.json()["error"]["message"]
+    assert client.post(f"/registrations/{rid}/answer", json={"field": "plate", "value": "x"}, headers=H).status_code == 422
+    assert client.get(f"/registrations/{rid}", headers=H).json()["needs_user"]["field"] == "resident_phone"
+    assert sent == []  # nothing was sent to anyone
+
+
+def test_at_most_three_resident_texts_per_hour(client, user_vehicle, portal_url, monkeypatch, sent):
+    from agent.services import maverick
+    monkeypatch.setattr(maverick, "MAVERICK_URL", f"{portal_url}/parkva")
+    codes = []
+    for i in range(4):
+        r = client.post("/maverick-place/register", json={"vehicle_id": user_vehicle, "confirm": True}, headers=H).json()
+        a = client.post(f"/registrations/{r['registration_id']}/answer", json={"field": "resident_phone", "value": f"+1555777000{i}"}, headers=H)
+        codes.append(a.status_code)
+    assert codes == [200, 200, 200, 429]
+
+
+def test_resident_who_never_replies_times_out(client, first_visit, sent):
+    from datetime import datetime, timedelta, timezone
+    from agent.services import reminders
+    rid = first_visit["registration_id"]
+    client.post(f"/registrations/{rid}/answer", json={"field": "resident_phone", "value": "+15557770001"}, headers=H)
+    reminders.resident_timeouts(datetime.now(timezone.utc) + timedelta(minutes=10))
+    assert client.get(f"/registrations/{rid}", headers=H).json()["status"] == "needs_user"
+    reminders.resident_timeouts(datetime.now(timezone.utc) + timedelta(minutes=31))
+    reg = client.get(f"/registrations/{rid}", headers=H).json()
+    assert reg["status"] == "failed" and reg["error"]["code"] == "resident_no_reply"
+
+
+def test_internal_inbound_needs_the_key(client, monkeypatch):
+    monkeypatch.setenv("INTERNAL_API_KEY", "internal-test-key")
+    body = {"message_id": "x1", "from_phone": "+15557770001", "text": "hi"}
+    assert client.post("/messaging/inbound", json=body).status_code == 401
+    assert client.post("/messaging/inbound", json=body, headers={"X-Internal-Key": "wrong"}).status_code == 401
+    assert client.post("/messaging/inbound", json={**body, "from_phone": "nope"}, headers={"X-Internal-Key": "internal-test-key"}).status_code == 422
+    assert client.post("/messaging/inbound", json=body, headers={"X-Internal-Key": "internal-test-key"}).json() == {"ok": True}
+    monkeypatch.setenv("INTERNAL_API_KEY", "")
+    assert client.post("/messaging/inbound", json=body, headers={"X-Internal-Key": ""}).status_code == 401  # no key set: closed
+
+
+def test_parse_resident_reply():
+    from agent.services.messaging import parse_resident_reply as p
+    assert p("227A Adhikary") == ("227A", "Adhikary")
+    assert p("Unit 227-A, last name Adhikary") == ("227A", "Adhikary")
+    assert p("adhikary 227 a") == ("227A", "Adhikary")
+    assert p("apt #12 O'Brien") == ("12", "O'Brien")
+    assert p("Smith Jones 227A") is None and p("hello") is None and p("227A") is None

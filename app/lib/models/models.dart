@@ -25,12 +25,16 @@ enum RegistrationStatus {
 }
 
 enum NeedsUserReason {
-  captcha, missingInfo, ruleConflict, payment;
+  captcha, missingInfo, ruleConflict, payment,
+
+  /// Maverick Place: a resident was texted and the registration waits for their reply.
+  residentInfo;
 
   static NeedsUserReason parse(String s) => switch (s) {
         'captcha' => captcha,
         'missing_info' => missingInfo,
         'rule_conflict' => ruleConflict,
+        'resident_info' => residentInfo,
         _ => payment,
       };
 }
@@ -47,6 +51,9 @@ class User {
   final bool consentRegister;
   final double spendingCapUsd;
   final NotifyChannel notifyChannel;
+
+  /// True when this person signed up (has an email + password), false for an anonymous device.
+  final bool hasAccount;
   const User({
     required this.name,
     required this.phone,
@@ -54,6 +61,7 @@ class User {
     required this.consentRegister,
     this.spendingCapUsd = 10,
     this.notifyChannel = NotifyChannel.app,
+    this.hasAccount = false,
   });
 
   factory User.fromJson(Map<String, dynamic> j) => User(
@@ -64,6 +72,7 @@ class User {
         spendingCapUsd: (j['spending_cap_usd'] as num?)?.toDouble() ?? 0,
         notifyChannel: NotifyChannel.values.firstWhere((c) => c.name == j['notify_channel'],
             orElse: () => NotifyChannel.app),
+        hasAccount: j['has_account'] == true,
       );
 
   Map<String, dynamic> toJson() => {
@@ -273,4 +282,17 @@ class VehicleVision {
   const VehicleVision(this.plate, this.state, this.make, this.model, this.color, this.confidence);
   factory VehicleVision.fromJson(Map<String, dynamic> j) => VehicleVision(j['plate'] ?? '',
       j['state'] ?? '', j['make'] ?? '', j['model'] ?? '', j['color'] ?? '', (j['confidence'] as num?)?.toDouble() ?? 0);
+}
+
+/// Response of POST /auth/signup and /auth/signin (contract endpoints 23, 24).
+class AuthResult {
+  final User user;
+  final String token;
+  final DateTime? expiresAt;
+  const AuthResult(this.user, this.token, this.expiresAt);
+  factory AuthResult.fromJson(Map<String, dynamic> j) => AuthResult(
+        User.fromJson(j['user']),
+        j['token'] as String,
+        j['expires_at'] == null ? null : DateTime.tryParse(j['expires_at']),
+      );
 }

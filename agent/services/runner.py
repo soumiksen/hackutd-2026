@@ -9,6 +9,7 @@ from .. import db, errors, safety
 from ..config import settings
 from ..models import ConfirmationExtract
 from ..vendors import mockpark
+from .. import store
 from . import data, drafts, fallback, llm, messaging, properties, proofs
 
 log = logging.getLogger("parkour.runner")
@@ -203,10 +204,6 @@ async def _guestpass(page, values: dict, rid: str) -> str:
 
 
 # ---------- orchestration ----------
-def _set(reg_id, **changes):
-    return drafts.update(reg_id, lambda r: r.update(changes))
-
-
 async def run(registration_id: str):
     async with _sem:
         try:
@@ -220,16 +217,17 @@ async def run(registration_id: str):
 
 
 async def _fail(rid: str, code: str, message: str):
-    reg = _set(rid, status="failed", error={"code": code, "message": message}, needs_user=None)
-    user = db.get("users", "user_id", reg["_user_id"])
+    store.get_store().reg_failed(rid, code, message)
+    reg = drafts.load(rid)
+    user = store.get_store().get_user(reg["_user_id"])
     if user:
         messaging.notify("failed", user, reg)
 
 
 async def _run(rid: str):
     reg = drafts.load(rid)
-    user = db.get("users", "user_id", reg["_user_id"])
-    veh = db.get("vehicles", "vehicle_id", reg["vehicle"]["vehicle_id"])
+    user = store.get_store().get_user(reg["_user_id"])
+    veh = store.get_store().get_vehicle(reg["vehicle"]["vehicle_id"])
     prop = properties.get_raw(reg["property"]["property_id"])
     vendor = data.vendors()[prop["vendor_id"]]
     values = canonical_values(reg, user, veh)
@@ -248,12 +246,12 @@ async def _run(rid: str):
     for n in range(MAX_ATTEMPTS):
         try:
             proof = await attempt(drafts.load(rid), user, veh, prop, vendor, values, url)
-            done = _set(rid, status="confirmed", needs_user=None, error=None, proof={
+            drafts.set_step(rid, "capture_proof", "done")
+            store.get_store().reg_confirmed(rid, {
                 **proof, "screenshot_urls": [proofs.url_for(rid, "confirmation.png"),
                                              proofs.url_for(rid, "fill_form.png")]})
-            drafts.set_step(rid, "capture_proof", "done")
             messaging.notify("confirmed", user, drafts.load(rid))
-            return done
+            return
         except NeedsUser as nu:
             return _needs_user(rid, user, nu)
         except errors.ApiError as e:
@@ -268,7 +266,6 @@ async def _run(rid: str):
 
 
 def _needs_user(rid: str, user: dict, nu: NeedsUser):
-    reg = _set(rid, status="needs_user", needs_user={
+    store.get_store().reg_needs_user(rid, {
         "reason": nu.reason, "message": nu.message, "field": nu.field, "portal_url": nu.portal_url})
-    messaging.notify("needs_user", user, reg)
-    return reg
+    messaging.notify("needs_user", user, drafts.load(rid))

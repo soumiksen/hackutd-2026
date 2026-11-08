@@ -48,9 +48,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(name.isEmpty ? 'Guest' : name, style: t.titleLarge),
-                    const Text(
-                      'Parkour registers on your behalf only after you confirm.',
-                      style: TextStyle(color: P.muted, fontSize: 13),
+                    Text(
+                      session.signedIn
+                          ? (session.email ?? 'Signed in')
+                          : 'Not signed in. Create an account to keep your cars on every device.',
+                      style: const TextStyle(color: P.muted, fontSize: 13),
                     ),
                   ],
                 ),
@@ -58,6 +60,31 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ],
           ),
         ),
+        const SizedBox(height: S.md),
+        if (session.signedIn)
+          OutlinedButton.icon(
+            onPressed: () async {
+              try {
+                await api.signOut(); // ends this session on the server
+              } catch (_) {} // already expired is fine
+              await session.clearSession();
+              widget.onReset();
+            },
+            icon: const Icon(Icons.logout_rounded),
+            label: const Text('Sign out'),
+          )
+        else
+          FilledButton.icon(
+            onPressed: () async {
+              final done = await showDialog<bool>(context: context, builder: (_) => const _CreateAccountDialog());
+              if (done == true && context.mounted) {
+                showToast(context, 'Account created', icon: Icons.check_circle_outline_rounded);
+                setState(() {});
+              }
+            },
+            icon: const Icon(Icons.person_add_alt_1_rounded),
+            label: const Text('Create account'),
+          ),
         const SizedBox(height: S.xl),
 
         Text('YOUR CARS', style: t.labelMedium),
@@ -215,6 +242,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
             );
             if (ok != true) return;
+            if (session.signedIn) {
+              try {
+                await api.signOut();
+              } catch (_) {}
+            }
             await session.reset();
             widget.onReset();
           },
@@ -224,6 +256,79 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       ],
     );
   }
+}
+
+/// For people who started before accounts existed: adds an email and password to this device's profile.
+class _CreateAccountDialog extends ConsumerStatefulWidget {
+  const _CreateAccountDialog();
+  @override
+  ConsumerState<_CreateAccountDialog> createState() => _CreateAccountDialogState();
+}
+
+class _CreateAccountDialogState extends ConsumerState<_CreateAccountDialog> {
+  final form = GlobalKey<FormState>();
+  final email = TextEditingController();
+  final password = TextEditingController();
+  bool busy = false;
+
+  Future<void> submit() async {
+    if (!form.currentState!.validate()) return;
+    setState(() => busy = true);
+    final api = ref.read(apiProvider);
+    final session = ref.read(sessionProvider);
+    try {
+      final me = await api.getMe(); // the profile this device already saved: name, phone, consent
+      final auth = await api.signUp(
+        email: email.text.trim(),
+        password: password.text,
+        name: me.name,
+        phone: me.phone,
+        consentRegister: me.consentRegister,
+        notifyChannel: me.notifyChannel,
+      );
+      api.setToken(auth.token);
+      await session.saveSession(token: auth.token, email: auth.user.email, name: auth.user.name);
+      if (mounted) Navigator.pop(context, true);
+    } catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        title: const Text('Create account'),
+        content: Form(
+          key: form,
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            TextFormField(
+              controller: email,
+              keyboardType: TextInputType.emailAddress,
+              decoration: const InputDecoration(labelText: 'Email'),
+              validator: (v) => (v ?? '').contains('@') ? null : 'Enter an email',
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: password,
+              obscureText: true,
+              decoration: const InputDecoration(labelText: 'Password', helperText: 'At least 8 characters'),
+              validator: (v) => (v ?? '').length >= 8 ? null : 'At least 8 characters',
+              onFieldSubmitted: (_) => busy ? null : submit(),
+            ),
+          ]),
+        ),
+        actions: [
+          TextButton(onPressed: busy ? null : () => Navigator.pop(context, false), child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(minimumSize: const Size(0, 44)),
+            onPressed: busy ? null : submit,
+            child: busy
+                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                : const Text('Create'),
+          ),
+        ],
+      );
 }
 
 class _IconBox extends StatelessWidget {

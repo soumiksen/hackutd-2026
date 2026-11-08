@@ -4,7 +4,7 @@ import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from .. import db, errors, safety
+from .. import errors, safety, store
 from ..config import settings
 from ..vendors import parkva
 from . import drafts, messaging, proofs
@@ -23,27 +23,19 @@ def split_name(full: str) -> tuple[str, str]:
     return (parts[0], " ".join(parts[1:]) or parts[0]) if parts else ("", "")
 
 
-def create(user: dict, veh: dict, unit: str, resident_last_name: str, guest: dict | None, dry_run: bool) -> dict:
-    """Make the registration record (status submitting) and start the run. Caller has checked consent."""
+def create(user: dict, veh: dict, unit: str | None, resident_last_name: str | None, guest: dict | None,
+           dry_run: bool) -> dict:
+    """Start a Maverick Place registration. The module checks consent, fills a missing unit or resident name
+    from the last visit, and queues it for the worker."""
     first, last = split_name(user["name"])
     g = guest or {}
-    reg = {
-        "registration_id": f"reg_{uuid.uuid4().hex[:10]}", "_user_id": user["user_id"],
-        "created_at": proofs.now_iso(), "_flow": "maverick", "_dry_run": dry_run, "_answers": {},
-        "status": "submitting", "property": dict(PROPERTY), "alternatives": [],
-        "vehicle": drafts.vehicle_public(veh), "role": "visitor",
-        "host": {"name": resident_last_name.strip(), "unit": unit.strip()}, "duration_hours": 24,
-        "summary": f"Register your {veh['model']} ({veh['state']} {veh['plate']}) at Maverick Place "
-                   f"as a guest of unit {unit.strip()}, Day Pass?",
-        "steps": [{"name": "match_property", "status": "done", "at": proofs.now_iso()}],
-        "needs_user": None, "proof": None, "error": None,
-        "_guest": {"first_name": g.get("first_name") or first, "last_name": g.get("last_name") or last,
-                   "email": g.get("email") or user["email"]},
-    }
-    drafts.save(reg)
-    from . import runner
-    runner.start(reg["registration_id"])
-    return reg
+    guest_full = {"first_name": g.get("first_name") or first, "last_name": g.get("last_name") or last,
+                  "email": g.get("email") or user["email"]}
+    rid = f"reg_{uuid.uuid4().hex[:10]}"
+    store.get_store().start_maverick(rid, user["user_id"], veh["vehicle_id"], unit, resident_last_name, guest_full, dry_run)
+    from . import worker
+    worker.wake()
+    return drafts.load(rid)
 
 
 def values(reg: dict, veh: dict) -> dict:
@@ -133,14 +125,10 @@ async def attempt(reg: dict, veh: dict, v: dict) -> dict | None:
             await browser.close()
 
 
-def _set(rid, **ch):
-    return drafts.update(rid, lambda r: r.update(ch))
-
-
 async def run(rid: str):
     reg = drafts.load(rid)
-    user = db.get("users", "user_id", reg["_user_id"])
-    veh = db.get("vehicles", "vehicle_id", reg["vehicle"]["vehicle_id"])
+    user = store.get_store().get_user(reg["_user_id"])
+    veh = store.get_store().get_vehicle(reg["vehicle"]["vehicle_id"])
     try:
         safety.check_url(MAVERICK_URL, extra_hosts=EXTRA_ALLOWED)
     except errors.ApiError as e:
@@ -151,9 +139,9 @@ async def run(rid: str):
         try:
             proof = await attempt(reg, veh, values(reg, veh))
         except NeedsUser as nu:
-            r = _set(rid, status="needs_user", needs_user={"reason": nu.reason, "message": nu.message,
-                                                           "field": nu.field, "portal_url": nu.portal_url})
-            messaging.notify("needs_user", user, r)
+            store.get_store().reg_needs_user(rid, {"reason": nu.reason, "message": nu.message,
+                                                   "field": nu.field, "portal_url": nu.portal_url})
+            messaging.notify("needs_user", user, drafts.load(rid))
             return
         except Failure as e:
             last = str(e)
@@ -163,15 +151,14 @@ async def run(rid: str):
             await asyncio.sleep(1)
             continue
         if proof is None:  # dry run: form filled, nothing submitted
-            _set(rid, status="cancelled", needs_user=None,
-                 summary="Dry run: the Maverick Place form was filled in but NOT submitted.",
-                 proof={"confirmation_number": None, "expires_at": None,
-                        "screenshot_urls": [proofs.url_for(rid, "fill_form.png")]})
+            store.get_store().reg_dry_run_done(
+                rid, "Dry run: the Maverick Place form was filled in but NOT submitted.",
+                {"confirmation_number": None, "expires_at": None,
+                 "screenshot_urls": [proofs.url_for(rid, "fill_form.png")]})
             return
-        _set(rid, status="confirmed", needs_user=None, error=None,
-             proof={**proof, "screenshot_urls": [proofs.url_for(rid, "confirmation.png"),
-                                                 proofs.url_for(rid, "fill_form.png")]})
         drafts.set_step(rid, "capture_proof", "done")
+        store.get_store().reg_confirmed(rid, {**proof, "screenshot_urls": [proofs.url_for(rid, "confirmation.png"),
+                                                                           proofs.url_for(rid, "fill_form.png")]})
         messaging.notify("confirmed", user, drafts.load(rid))
         return
     _fail(rid, user, "portal_failed", last if last.startswith("Maverick Place refused") else
@@ -179,6 +166,6 @@ async def run(rid: str):
 
 
 def _fail(rid, user, code, message):
-    r = _set(rid, status="failed", error={"code": code, "message": message}, needs_user=None)
+    store.get_store().reg_failed(rid, code, message)
     if user:
-        messaging.notify("failed", user, r)
+        messaging.notify("failed", user, drafts.load(rid))

@@ -33,8 +33,31 @@ def portal_url():
     srv.shutdown()
 
 
+TEST_DB = "parkour-test"
+
+
+@pytest.fixture(scope="session")
+def spacetime():
+    """Publishes the module to a throwaway database on the local SpacetimeDB server (spacetime start)."""
+    import os, shutil, subprocess
+    cli = shutil.which("spacetime") or os.path.expanduser("~/.local/bin/spacetime")
+    if not os.path.exists(cli):
+        pytest.skip("spacetime CLI is not installed")
+    from agent.config import settings
+    import httpx
+    try:
+        httpx.get(f"{settings.spacetimedb_uri}/v1/ping", timeout=2)
+    except Exception:
+        pytest.skip("no SpacetimeDB server at " + settings.spacetimedb_uri + " (run: spacetime start)")
+    root = Path(__file__).resolve().parents[2]
+    r = subprocess.run([cli, "publish", TEST_DB, "--module-path", str(root / "spacetimedb"), "--server", "local", "--yes"],
+                       capture_output=True, text=True, timeout=300)
+    assert r.returncode == 0, r.stdout + r.stderr
+    return TEST_DB
+
+
 @pytest.fixture
-def client(tmp_path, monkeypatch, portal_url):
+def client(tmp_path, monkeypatch, portal_url, spacetime):
     # point the fake portal paths at /mockpark and /guestpass (the contract's portal_path values)
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path}/t.db")
     monkeypatch.setenv("PROOFS_DIR", str(tmp_path / "proofs"))
@@ -43,9 +66,14 @@ def client(tmp_path, monkeypatch, portal_url):
     monkeypatch.setenv("PHOTON_WEBHOOK_SECRET", "whsec_test")
     monkeypatch.setenv("MESSENGER_URL", "http://127.0.0.1:9")  # nothing listens: sends fail quietly
     monkeypatch.setenv("DEMO_PORTAL_PARAMS", "")
-    from agent import db
+    from agent import auth, db, store
     from agent.config import settings
     db.reset()
+    monkeypatch.setenv("SPACETIMEDB_DATABASE", TEST_DB)  # must come before anything touches the store
+    store.set_store(None)
+    store.get_store().dev_wipe()  # every test starts from an empty database
+    auth.reset_throttle()
+    monkeypatch.setenv("REQUIRE_AUTH", "false")
     from agent.main import app
     app.router.routes = [r for r in app.router.routes if getattr(r, "name", "") != "proofs"]
     from fastapi.staticfiles import StaticFiles

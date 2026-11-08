@@ -31,6 +31,7 @@ class ParkourApp extends ConsumerStatefulWidget {
 class _ParkourAppState extends ConsumerState<ParkourApp> {
   @override
   Widget build(BuildContext context) {
+    ref.listen(authTick, (_, _) => setState(() {})); // session expired: back to sign-in
     final onboarded = ref.watch(sessionProvider).onboarded;
     return MaterialApp(
       title: 'Parkour',

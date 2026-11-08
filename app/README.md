@@ -25,6 +25,14 @@ flutter run --dart-define=API_BASE_URL=http://10.0.2.2:8000          # Android e
 flutter run --dart-define=API_BASE_URL=https://<your-tunnel-host>     # real phone
 ```
 
+## Maverick Place (arrival flow)
+
+Maverick Place is in the property list, so the geofence prompts "Do you want to park here?" when the phone is inside it.
+Saying yes starts `POST /maverick-place/register`. If the backend has this user's unit and the resident's last name
+from an earlier visit, it registers at once. If not, the status screen asks for the **resident's phone number**, the
+backend texts that resident through Photon asking for their unit and last name, and the screen shows "Waiting for the
+resident". When they reply, the registration goes through and the unit is saved for next time.
+
 ## What's in it
 
 | Screen | Contract endpoints |
@@ -37,7 +45,13 @@ flutter run --dart-define=API_BASE_URL=https://<your-tunnel-host>     # real pho
 | Passes: proof screenshot, confirmation number, countdown, Renew | `GET /passes`, `/renew`, `GET /proofs/...` |
 | Settings: cars, demo mode, backend health, device ID, restart onboarding | `GET /vehicles`, `GET /health` |
 
-Identity is a UUID made once per device and sent as `X-User-Id`.
+Identity: onboarding creates an account (`POST /auth/signup`: name, phone, email, password, consent, notify channel), stores the
+session token on the device and sends it as `Authorization: Bearer`. The backend keeps the account, cars, saved places and history
+in SpacetimeDB (or its SQLite fallback). Returning users tap **I already have an account** (`POST /auth/signin`) and get their cars
+back on any device. People who onboarded before accounts existed can add an email and password from **Settings → Create account**.
+Until then a random per-device UUID is sent as `X-User-Id`. If the server says the session expired, the app returns to sign-in.
+
+Test the real client against a running backend: `scripts/dev.sh &` then `cd app && flutter test test/auth_flow_test.dart`.
 
 ## Differences from the plan, for speed
 

@@ -10,14 +10,32 @@ class ApiClient {
   final Dio _dio;
   final String baseUrl;
 
-  ApiClient(String userId, {String? baseUrl})
+  /// Called when the server rejects a signed-in session (expired or revoked), so the app can ask to sign in again.
+  void Function()? onUnauthorized;
+
+  ApiClient(String userId, {String? baseUrl, String? token})
       : baseUrl = baseUrl ?? Config.apiBaseUrl,
         _dio = Dio(BaseOptions(
           baseUrl: baseUrl ?? Config.apiBaseUrl,
-          headers: {'X-User-Id': userId},
+          headers: {'X-User-Id': userId, if (token != null) 'Authorization': 'Bearer $token'},
           connectTimeout: const Duration(seconds: 8),
           receiveTimeout: const Duration(seconds: 60),
-        ));
+        )) {
+    _dio.interceptors.add(InterceptorsWrapper(onError: (e, handler) {
+      final hadToken = _dio.options.headers.containsKey('Authorization');
+      if (hadToken && e.response?.statusCode == 401) onUnauthorized?.call();
+      handler.next(e);
+    }));
+  }
+
+  /// Signed-in sessions send `Authorization: Bearer <token>` (contract section 2). Null = anonymous device.
+  void setToken(String? token) {
+    if (token == null) {
+      _dio.options.headers.remove('Authorization');
+    } else {
+      _dio.options.headers['Authorization'] = 'Bearer $token';
+    }
+  }
 
   /// Proof images: API_BASE_URL + proof.screenshot_urls[i] (endpoint 21).
   String proofUrl(String path) => '$baseUrl$path';
@@ -38,6 +56,28 @@ class ApiClient {
   Future<bool> health() => _call(() => _dio.get('/health'), (d) => d['status'] == 'ok');
   // 2
   Future<User> upsertUser(User u) => _call(() => _dio.post('/users', data: u.toJson()), (d) => User.fromJson(d));
+  // 23, 24, 25. The device's X-User-Id rides along on sign-up, so an anonymous profile keeps its cars.
+  Future<AuthResult> signUp({
+    required String email,
+    required String password,
+    required String name,
+    required String phone,
+    required bool consentRegister,
+    required NotifyChannel notifyChannel,
+  }) =>
+      _call(
+          () => _dio.post('/auth/signup', data: {
+                'email': email,
+                'password': password,
+                'name': name,
+                'phone': phone,
+                'consent_register': consentRegister,
+                'notify_channel': notifyChannel.name,
+              }),
+          (d) => AuthResult.fromJson(d));
+  Future<AuthResult> signIn(String email, String password) => _call(
+      () => _dio.post('/auth/signin', data: {'email': email, 'password': password}), (d) => AuthResult.fromJson(d));
+  Future<void> signOut() => _call(() => _dio.post('/auth/signout'), (_) {});
   // 3
   Future<User> getMe() => _call(() => _dio.get('/users/me'), (d) => User.fromJson(d));
   // 4
@@ -99,6 +139,16 @@ class ApiClient {
   // 16
   Future<Registration> renewRegistration(String registrationId, int durationHours) => _call(
       () => _dio.post('/registrations/$registrationId/renew', data: {'duration_hours': durationHours}),
+      (d) => Registration.fromJson(d));
+  // 22: Maverick Place. The user already said yes to "park here?", so this starts at once. With no saved unit it
+  // returns a registration that asks for the resident's phone (needs_user, field resident_phone).
+  Future<Registration> maverickRegister({required String vehicleId, String? unit, String? residentLastName}) => _call(
+      () => _dio.post('/maverick-place/register', data: {
+            'vehicle_id': vehicleId,
+            'confirm': true,
+            'unit': ?unit,
+            'resident_last_name': ?residentLastName,
+          }),
       (d) => Registration.fromJson(d));
   // 17
   Future<List<Registration>> listPasses() =>

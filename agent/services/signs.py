@@ -3,12 +3,15 @@ import json
 import uuid
 from datetime import datetime, timedelta
 
+from zoneinfo import ZoneInfo
+
 from fastapi import UploadFile
 
 from .. import db, errors
 from ..models import PlanOut, SignRead
 from . import data, drafts, llm, proofs, vision
 
+TZ = ZoneInfo("America/Chicago")
 DEFAULT_STAY = timedelta(hours=2)
 PAID = {"pay_by_app", "meter", "garage", "lot_attendant"}
 
@@ -30,7 +33,7 @@ def _event_warnings(now: datetime) -> list[str]:
 
 async def analyze(user_id: str, photo: UploadFile, lat: float | None, lng: float | None) -> dict:
     sign, unreadable = await vision.analyze_sign(photo)
-    now = datetime.now(drafts.TZ)
+    now = datetime.now(TZ)
     zone = next((z for z in data.zones() if z["zone_code"] == sign.zone_code), None)
     sources = [{"type": "sign_photo", "label": "Your photo"}]
 

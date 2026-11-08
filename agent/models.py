@@ -131,8 +131,46 @@ class MaverickGuest(BaseModel):
 class MaverickIn(BaseModel):
     """Hard-coded Maverick Place guest registration (contract endpoint 22)."""
     vehicle_id: str
-    unit: str = Field(min_length=1, max_length=20)                 # e.g. "101-A"
-    resident_last_name: str = Field(min_length=1, max_length=60)   # the resident being visited
+    unit: Optional[str] = Field(default=None, min_length=1, max_length=20)                 # e.g. "101-A"; saved place if omitted
+    resident_last_name: Optional[str] = Field(default=None, min_length=1, max_length=60)   # the resident being visited
     guest: Optional[MaverickGuest] = None                          # defaults to the user's name and email
     confirm: bool = False                                          # the app sends true only after the user taps Register
     dry_run: bool = False                                          # fill the form, take a screenshot, do not submit
+
+
+class SignUpIn(BaseModel):
+    email: str
+    password: str
+    name: str = Field(min_length=1, max_length=100)
+    phone: str = Field(pattern=r"^\+[1-9]\d{6,14}$")
+    consent_register: bool = False
+    spending_cap_usd: float = Field(default=10, ge=0, le=1000)
+    notify_channel: NotifyChannel = "app"
+
+
+class SignInIn(BaseModel):
+    email: str
+    password: str
+
+
+class PasswordIn(BaseModel):
+    current_password: str
+    new_password: str
+
+
+class UserPatch(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    phone: Optional[str] = Field(default=None, pattern=r"^\+[1-9]\d{6,14}$")
+    consent_register: Optional[bool] = None
+    spending_cap_usd: Optional[float] = Field(default=None, ge=0, le=1000)
+    notify_channel: Optional[NotifyChannel] = None
+
+
+class PlaceLabelIn(BaseModel):
+    label: str = Field(max_length=60)
+
+
+class ResidentDetails(BaseModel):
+    """What a resident's free-text reply contains. Empty strings when it is not there."""
+    unit: str = ""
+    last_name: str = ""
