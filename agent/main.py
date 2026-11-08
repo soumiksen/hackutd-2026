@@ -7,13 +7,14 @@ from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, File, Form, Header, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import db, errors
 from .config import settings
-from .models import (AnswerIn, CheckoutIn, ConfirmIn, DraftIn, PatchIn, RenewIn, UserIn, VehicleIn)
-from .services import drafts, messaging, properties, reminders, signs, vision
+from .models import (AnswerIn, CheckoutIn, ConfirmIn, DraftIn, MaverickIn, PatchIn, RenewIn, UserIn, VehicleIn)
+from .services import drafts, maverick, messaging, properties, reminders, signs, vision
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
 
@@ -29,6 +30,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Parkour API", lifespan=lifespan)
+# No cookies or auth headers beyond X-User-Id, so any origin is safe; lets `flutter run -d chrome` call the API directly.
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 settings.proofs_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/proofs", StaticFiles(directory=str(settings.proofs_dir)), name="proofs")  # endpoint 21
 
@@ -169,6 +172,19 @@ async def analyze_sign(photo: UploadFile = File(...), lat: float | None = Form(N
 @app.post("/checkout/mock")
 async def checkout(body: CheckoutIn, user: dict = Depends(current_user)):
     return signs.checkout(user, body.plan_id, body.amount_usd)
+
+
+# 22: hard-coded Maverick Place guest parking. Poll the result with GET /registrations/{id}.
+@app.post("/maverick-place/register")
+async def maverick_register(body: MaverickIn, user: dict = Depends(current_user)):
+    if not body.confirm:
+        raise errors.validation("confirm must be true: the user has to approve the registration.")
+    if not user.get("consent_register"):
+        raise errors.consent_required()
+    veh = drafts._vehicle(user["user_id"], body.vehicle_id)
+    reg = maverick.create(user, veh, body.unit, body.resident_last_name,
+                          body.guest.model_dump(exclude_none=True) if body.guest else None, body.dry_run)
+    return drafts.public(reg)
 
 
 # 20 (called by Photon, not the app): verify signature, ack fast, work in the background

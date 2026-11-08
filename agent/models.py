@@ -120,3 +120,19 @@ class PlanOut(BaseModel):
     tow_risk: Literal["low", "medium", "high"] = "medium"
     confidence: float = 0.0
     warnings: list[str] = []
+
+
+class MaverickGuest(BaseModel):
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    email: Optional[str] = None
+
+
+class MaverickIn(BaseModel):
+    """Hard-coded Maverick Place guest registration (contract endpoint 22)."""
+    vehicle_id: str
+    unit: str = Field(min_length=1, max_length=20)                 # e.g. "101-A"
+    resident_last_name: str = Field(min_length=1, max_length=60)   # the resident being visited
+    guest: Optional[MaverickGuest] = None                          # defaults to the user's name and email
+    confirm: bool = False                                          # the app sends true only after the user taps Register
+    dry_run: bool = False                                          # fill the form, take a screenshot, do not submit

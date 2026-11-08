@@ -194,8 +194,10 @@ Android emulator reaches the host machine at `http://10.0.2.2:8000`. A real phon
 | 19 | POST | `/checkout/mock` | `{"plan_id":"plan_123","amount_usd":4.35}` | `{"receipt_id","amount_usd","paid_at"}` | app |
 | 20 | POST | `/messaging/webhook` | Photon event, signed | `{"ok":true}` | Photon (not the app) |
 | 21 | GET | `/proofs/{registration_id}/{filename}` | none | static image | app |
+| 22 | POST | `/maverick-place/register` | `{vehicle_id, unit, resident_last_name, confirm:true, guest?:{first_name,last_name,email}, dry_run?}` | Registration (`submitting`, property `maverick-place`) | app |
 
 Notes:
+- #22 is a hard-coded flow for the real Maverick Place visitor page (`app.parkva.com`). It has no draft step: the request itself is the user's approval, so `confirm` must be `true` and `consent_register` must be true (else `403 consent_required`). Poll with #13; Check 2 uses `/answer` (`host_unit`, `host_name`) as usual. `dry_run: true` fills the form and stops before submit (ends `cancelled`). Duration is fixed by the site (Day Pass).
 - `POST /registrations/draft` never starts the agent. Only #11 does, and only if `consent_register` is true (else `403 consent_required`).
 - Starting #11 when the status is not `awaiting_confirm` returns `409 wrong_state`.
 - Confirming from a message reply uses `channel: "message"`.
@@ -288,3 +290,4 @@ Demo users' real phone numbers are **never** committed. `demo.json` holds `phone
 |---|---|---|
 | 2026-11-07 | Initial contract. Adds `/users`, `/vehicles`, `/messaging/webhook`, `X-User-Id` header, Photon messenger service, Nemotron env vars | PM |
 | 2026-11-07 | Adds optional `DEMO_PORTAL_PARAMS` env var so the backend can trigger `captcha=on` / `fail=1` for demos | Backend |
+| 2026-11-07 | Adds endpoint 22 `POST /maverick-place/register` (hard-coded real-portal flow, `app.parkva.com` allowed for this flow only) | Backend |

@@ -164,6 +164,9 @@ async def attempt(reg: dict, user: dict, veh: dict, prop: dict, vendor: dict, va
             except (NeedsUser, PortalFailure):
                 await _failure_shot(page, rid)
                 raise
+            except errors.ApiError:
+                await _failure_shot(page, rid)
+                raise
             except Exception as e:
                 await _failure_shot(page, rid)
                 raise PortalFailure(f"{type(e).__name__}") from e
@@ -207,6 +210,9 @@ def _set(reg_id, **changes):
 async def run(registration_id: str):
     async with _sem:
         try:
+            if drafts.load(registration_id).get("_flow") == "maverick":
+                from . import maverick  # hard-coded Maverick Place flow
+                return await maverick.run(registration_id)
             await _run(registration_id)
         except Exception as e:  # never leave a registration stuck in submitting
             log.exception("runner crashed")
@@ -256,7 +262,7 @@ async def _run(rid: str):
                 break
         except PortalFailure as e:
             last = str(e)
-        log.info("attempt %d failed", n + 1)
+        log.info("attempt %d failed: %s", n + 1, last[:120])
         await asyncio.sleep(0.5)
     await _fail(rid, "portal_failed", f"The portal did not accept the registration ({last}).")
 

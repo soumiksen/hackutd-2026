@@ -62,8 +62,18 @@ def _cache_put(key: str, value: dict):
 
 
 async def _complete(model: str, messages: list[dict]) -> str:
-    resp = await asyncio.wait_for(client().chat.completions.create(
-        model=model, messages=messages, temperature=0, max_tokens=1024), timeout=45)
+    # Nemotron is a reasoning model: thinking tokens are billed and can eat the whole budget, leaving
+    # `content` empty. Turn thinking off (chat template flag) for agent JSON tasks.
+    extra = {"chat_template_kwargs": {"enable_thinking": False}} if "nemotron" in model.lower() else None
+    try:
+        resp = await asyncio.wait_for(client().chat.completions.create(
+            model=model, messages=messages, temperature=0, max_tokens=1024, extra_body=extra), timeout=45)
+    except Exception as e:
+        if extra and getattr(e, "status_code", None) == 400:  # model rejects the flag: retry plain
+            resp = await asyncio.wait_for(client().chat.completions.create(
+                model=model, messages=messages, temperature=0, max_tokens=2048), timeout=60)
+        else:
+            raise
     return resp.choices[0].message.content or ""
 
 

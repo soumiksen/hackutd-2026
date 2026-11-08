@@ -18,15 +18,15 @@ SNAPSHOT_JS = """() => {
     const p = e.closest('label'); return p ? p.innerText.trim() : (e.getAttribute('aria-label') || '');
   };
   const fields = [...document.querySelectorAll('input, select, textarea')]
-    .filter(e => vis(e) && !['hidden','submit','button'].includes(e.type) && sel(e))
+    .filter(e => vis(e) && !e.readOnly && !e.disabled && !['hidden','submit','button'].includes(e.type) && sel(e))
     .map(e => ({selector: sel(e), tag: e.tagName.toLowerCase(), type: e.type || '', name: e.name || '', id: e.id || '',
-      label: labelOf(e), placeholder: e.placeholder || '',
+      label: labelOf(e), placeholder: e.placeholder || '', filled: !!(e.value && e.tagName !== 'SELECT'),
       options: e.tagName === 'SELECT' ? [...e.options].map(o => ({value: o.value, text: o.text})) : undefined}));
   const buttons = [...document.querySelectorAll('button, input[type=submit], input[type=button]')]
     .filter(vis).map(b => {
       const text = (b.innerText || b.value || '').trim().replace(/"/g, '');
       return {selector: b.id ? '#' + CSS.escape(b.id) : (b.tagName === 'BUTTON' && text ? 'button:text-is("' + text + '")' : null), text};
-    }).filter(b => b.selector);
+    }).filter(b => b.selector && b.text);
   return {fields, buttons};
 }"""
 
@@ -52,6 +52,8 @@ def validate_plan(plan: FormPlan, snap: dict, values: dict) -> FormPlan:
         spec = fields.get(f.selector)
         if not spec:
             log.warning("fallback: dropped unknown selector")
+            continue
+        if spec.get("filled"):  # already prefilled from the URL: leave it alone
             continue
         opts = {o["value"] for o in spec.get("options") or []} | {o["text"] for o in spec.get("options") or []}
         if f.value not in allowed_vals and f.value not in opts:

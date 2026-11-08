@@ -1,0 +1,28 @@
+<!doctype html><meta charset=utf-8><title>Fake visitor form (test only)</title>
+<form id=f>
+  <input id=plate autocomplete=off>
+  <input placeholder="Search your unit number" autocomplete=off id=unitbox>
+  <div id=opts></div>
+  <input placeholder="Resident's last name" id=rl>
+  <button type=button id=card>Day Pass Until Sun, Nov 8, 8:35 PM Free</button>
+  <input id=firstName><input id=lastName><input id=email type=email>
+  <button type=submit>Register your visit</button>
+</form>
+<div id=msg></div>
+<script>
+const units = ['101-A','101-B','102-A'];
+let picked = null;
+unitbox.oninput = () => {
+  opts.innerHTML = units.filter(u => u.startsWith(unitbox.value.toUpperCase())).map(u => `<div class=o>Unit ${u}</div>`).join('');
+  opts.querySelectorAll('.o').forEach(o => o.onclick = () => { picked = o.textContent.replace('Unit ',''); unitbox.value = o.textContent; opts.innerHTML=''; });
+};
+f.onsubmit = e => {
+  e.preventDefault();
+  if (plate.value.toUpperCase() === 'RES1') { msg.innerHTML = "<div role=alert>This vehicle can't park in this zone — it's reserved for visitors.\n\nYour resident portal</div>"; return; }
+  if (plate.value.toUpperCase() === 'DUP1') { msg.innerHTML = "<div role=alert>This plate is already registered here until Nov 8, 8:56 PM CST. You don't need another pass until then.</div>"; return; }
+  if (plate.value.toUpperCase() === 'TOAST1') { msg.innerHTML = "<div role=alert>Guest pass confirmed</div>"; return; }
+  if (!picked) { msg.innerHTML = '<div role=alert>Select a unit</div>'; return; }
+  if (rl.value.toLowerCase() !== 'park') { msg.innerHTML = '<div role=alert>Resident last name does not match this unit</div>'; return; }
+  document.body.innerHTML = '<h1>You are registered</h1><p>Confirmation number: MV48213</p>';
+};
+</script>

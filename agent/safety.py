@@ -15,17 +15,17 @@ def host_of(url: str) -> str | None:
         return None
 
 
-def is_allowed(url: str) -> bool:
+def is_allowed(url: str, extra_hosts: set[str] | frozenset = frozenset()) -> bool:
     host = host_of(url)
     if not host:
         return False
     if url.rstrip("/") in {u.rstrip("/") for u in seed.blocked_urls()}:
         return False
-    return host in {d.lower() for d in seed.allowed_domains()}
+    return host in {d.lower() for d in seed.allowed_domains()} | {h.lower() for h in extra_hosts}
 
 
-def check_url(url: str) -> None:
-    if not is_allowed(url):
+def check_url(url: str, extra_hosts: set[str] | frozenset = frozenset()) -> None:
+    if not is_allowed(url, extra_hosts):
         raise errors.unknown_domain(f"Blocked: {host_of(url) or 'invalid URL'} is not an approved portal domain.")
 
 
