@@ -6,6 +6,7 @@ import '../../core/theme.dart';
 import '../../core/widgets.dart';
 import '../../services/session.dart';
 import '../arrival/arrival_watcher.dart';
+import '../check1/check1_sheet.dart' show maverickId;
 
 class SettingsScreen extends ConsumerStatefulWidget {
   final VoidCallback onReset;
@@ -150,14 +151,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ListTile(
                 leading: const _IconBox(Icons.timer_outlined, P.agent),
                 title: const Text('Test notification in 10s', style: TextStyle(fontWeight: FontWeight.w700)),
-                subtitle: const Text('Tap, then leave the app or lock the phone.'),
+                subtitle: const Text('Always Maverick Place. Tap, then leave the app or lock the phone.'),
                 trailing: const Icon(Icons.chevron_right_rounded, color: P.faint),
                 onTap: () async {
                   try {
-                    final campus = ref.read(campusProvider);
-                    final list = await ref.read(campusPropertiesProvider(campus).future);
-                    final p = list.where((p) => p.hasPortal).firstOrNull;
-                    if (p == null) return;
+                    // Always Maverick Place, whatever the campus toggle or the phone's location says.
+                    final p = await ref.read(apiProvider).getProperty(maverickId);
                     await ref.read(arrivalProvider.notifier).scheduleTest(p);
                     if (context.mounted) {
                       showToast(
