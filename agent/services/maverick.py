@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 from .. import errors, safety, store
 from ..config import settings
 from ..vendors import parkva
+from . import browser as browser_mod
 from . import drafts, messaging, proofs
 
 log = logging.getLogger("parkour.maverick")
@@ -60,7 +61,7 @@ async def attempt(reg: dict, veh: dict, v: dict) -> dict | None:
     from playwright.async_api import async_playwright
     rid = reg["registration_id"]
     async with async_playwright() as pw:
-        browser = await pw.chromium.launch(headless=True)
+        browser = await browser_mod.launch(pw)
         try:
             ctx = await browser.new_context(viewport={"width": 420, "height": 900})
             page = await ctx.new_page()

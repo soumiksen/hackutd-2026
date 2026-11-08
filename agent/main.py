@@ -1,5 +1,6 @@
 """Parkour API (FastAPI). Endpoint paths and shapes follow API_CONTRACT.md section 5."""
 import asyncio
+import os
 import hmac
 import json
 import logging
@@ -21,6 +22,7 @@ from .models import (AnswerIn, CheckoutIn, ConfirmIn, DraftIn, MaverickIn, Passw
 from .services import data, drafts, maverick, messaging, properties, reminders, runner, signs, vision, worker
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
+logging.getLogger("httpx").setLevel(logging.WARNING)  # the worker polls every second; one log line per poll is noise
 
 
 @asynccontextmanager
@@ -45,7 +47,10 @@ async def lifespan(app: FastAPI):
     await asyncio.gather(*tasks, *running, return_exceptions=True)
 
 
-app = FastAPI(title="Parkour API", lifespan=lifespan)
+# In production there is no public interactive documentation page.
+_prod = os.environ.get("PRODUCTION") == "true"
+app = FastAPI(title="Parkour API", lifespan=lifespan,
+              docs_url=None if _prod else "/docs", redoc_url=None, openapi_url=None if _prod else "/openapi.json")
 # No cookies or auth headers beyond X-User-Id, so any origin is safe; lets `flutter run -d chrome` call the API directly.
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 settings.proofs_dir.mkdir(parents=True, exist_ok=True)

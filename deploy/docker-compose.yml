@@ -1,0 +1,91 @@
+# Whole backend on one machine:  docker compose --env-file deploy/.env.deploy -f deploy/docker-compose.yml up -d --build
+# Only Caddy (80/443) faces the internet. SpacetimeDB is published on the host's loopback only, for publishing the
+# module through an SSH tunnel (see deploy/README.md).
+name: parkour
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"   # without this, Docker logs grow until the disk is full
+    max-file: "3"
+
+services:
+  # Docker creates a new volume owned by root, but SpacetimeDB runs as uid 1000 and could not write to it.
+  # This one-time step hands the volume over before the database starts.
+  stdb-init:
+    image: busybox:1.37
+    command: ["chown", "-R", "1000:1000", "/data"]
+    volumes:
+      - stdb-data:/data
+    restart: "no"
+
+  spacetimedb:
+    logging: *logging
+    image: clockworklabs/spacetime:v2.14.1
+    restart: always
+    depends_on:
+      stdb-init:
+        condition: service_completed_successfully
+    command:
+      - start
+      - --listen-addr=0.0.0.0:3000
+      - --jwt-priv-key-path=/etc/spacetimedb/id_ecdsa
+      - --jwt-pub-key-path=/etc/spacetimedb/id_ecdsa.pub
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - stdb-data:/home/spacetime/.local/share/spacetime/data
+      - ./keys:/etc/spacetimedb:ro
+
+  api:
+    logging: *logging
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.api
+    restart: always
+    init: true            # reaps the browser's child processes
+    shm_size: "1gb"       # Chromium needs more than Docker's 64 MB default
+    env_file: .env.deploy
+    environment:
+      SPACETIMEDB_URI: http://spacetimedb:3000
+      MESSENGER_URL: http://messenger:8790
+    depends_on:
+      - spacetimedb
+    volumes:
+      - api-data:/data
+
+  messenger:
+    logging: *logging
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.messenger
+    restart: always
+    env_file: .env.deploy
+    environment:
+      BACKEND_URL: http://api:8000
+      MESSENGER_PORT: "8790"
+    depends_on:
+      - api
+
+  caddy:
+    logging: *logging
+    image: caddy:2
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ../app/build/web:/srv/web:ro     # the Flutter web build, if you serve the web app from here too
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - api
+
+volumes:
+  stdb-data:
+  api-data:
+  caddy-data:
+  caddy-config:

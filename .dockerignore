@@ -1,0 +1,13 @@
+.git
+.venv
+.env
+.env.*
+**/node_modules
+app
+proofs
+parkour.db*
+**/__pycache__
+.pytest_cache
+spacetimedb/node_modules
+mock-portal
+deploy/keys

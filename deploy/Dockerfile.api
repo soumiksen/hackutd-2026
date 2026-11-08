@@ -1,0 +1,28 @@
+# API + browser worker. The base image ships Chromium and its system libraries; its tag must match the
+# playwright version pinned in requirements.txt.
+FROM mcr.microsoft.com/playwright/python:v1.64.1-noble
+
+WORKDIR /app
+# A virtualenv avoids the "externally managed environment" error on Ubuntu. The base image lacks python3-venv.
+RUN apt-get update && apt-get install -y --no-install-recommends python3-venv \
+    && rm -rf /var/lib/apt/lists/* \
+    && python3 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY agent ./agent
+COPY data ./data
+
+ENV PYTHONUNBUFFERED=1 \
+    PRODUCTION=true \
+    CHROMIUM_NO_SANDBOX=1 \
+    DATA_DIR=/app/data \
+    PROOFS_DIR=/data/proofs \
+    DATABASE_URL=sqlite:////data/parkour.db
+RUN mkdir -p /data
+
+EXPOSE 8000
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s \
+  CMD python -c "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/health', timeout=4)"
+CMD ["uvicorn", "agent.main:app", "--host", "0.0.0.0", "--port", "8000"]

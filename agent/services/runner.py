@@ -1,6 +1,7 @@
 """Playwright runner: opens the mock portal, fills, submits, captures proof, handles Check 2."""
 import asyncio
 import logging
+import os
 import re
 from datetime import datetime, timezone
 from urllib.parse import parse_qsl, urlencode
@@ -10,6 +11,7 @@ from ..config import settings
 from ..models import ConfirmationExtract
 from ..vendors import mockpark
 from .. import store
+from . import browser as browser_mod
 from . import data, drafts, fallback, llm, messaging, properties, proofs
 
 log = logging.getLogger("parkour.runner")
@@ -21,7 +23,7 @@ EXPIRES = '[data-testid="expires-at"]'
 OUTCOME = f"{CONF}, {CAPTCHA}, {ERROR}"
 REQUIRED = ["plate", "state", "make", "model", "color", "guest_name", "phone", "duration_hours"]
 MAX_ATTEMPTS = 3  # first try plus 2 retries
-_sem = asyncio.Semaphore(2)
+_sem = asyncio.Semaphore(int(os.environ.get("MAX_BROWSER_RUNS", "2")))  # small servers set 1
 _running: set[asyncio.Task] = set()
 
 
@@ -131,7 +133,7 @@ async def attempt(reg: dict, user: dict, veh: dict, prop: dict, vendor: dict, va
     rid = reg["registration_id"]
     state_file = settings.proofs_dir / ".portal_state.json"  # keeps the portal's per-plate counter between runs
     async with async_playwright() as pw:
-        browser = await pw.chromium.launch(headless=True)
+        browser = await browser_mod.launch(pw)
         try:
             ctx = await browser.new_context(
                 storage_state=str(state_file) if state_file.exists() else None, viewport={"width": 420, "height": 900})

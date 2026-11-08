@@ -1,0 +1,21 @@
+# DOMAIN comes from .env.deploy. A real domain gets a free HTTPS certificate automatically.
+# The mobile app uses  API_BASE_URL=https://<domain>/api  and the Photon webhook is  https://<domain>/api/messaging/webhook
+{$DOMAIN} {
+	encode zstd gzip
+
+	# Only the messenger (inside Docker) may call this; it never needs to be reachable from outside.
+	handle /api/messaging/inbound {
+		respond 404
+	}
+
+	handle_path /api/* {
+		reverse_proxy api:8000
+	}
+
+	# Flutter web build (optional)
+	handle {
+		root * /srv/web
+		try_files {path} /index.html
+		file_server
+	}
+}
