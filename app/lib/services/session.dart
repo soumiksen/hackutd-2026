@@ -1,0 +1,85 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:uuid/uuid.dart';
+
+import '../core/api_client.dart';
+import '../models/models.dart';
+
+/// Device identity, onboarding state and small local caches (shared_preferences).
+class Session {
+  final SharedPreferences prefs;
+  Session(this.prefs);
+
+  static const _kUserId = 'device_user_id';
+  static const _kOnboarded = 'onboarded';
+  static const _kVehicleId = 'vehicle_id';
+  static const _kName = 'user_name';
+  static const _kDemo = 'demo_mode';
+
+  /// Random UUID generated once, sent as X-User-Id (contract section 2).
+  String get userId {
+    var id = prefs.getString(_kUserId);
+    if (id == null) {
+      id = const Uuid().v4();
+      prefs.setString(_kUserId, id);
+    }
+    return id;
+  }
+
+  bool get onboarded => prefs.getBool(_kOnboarded) ?? false;
+  String? get vehicleId => prefs.getString(_kVehicleId);
+  String get firstName => (prefs.getString(_kName) ?? '').split(' ').first;
+  bool get demoMode => prefs.getBool(_kDemo) ?? true;
+  set demoMode(bool v) => prefs.setBool(_kDemo, v);
+
+  Future<void> completeOnboarding({required String vehicleId, required String name}) async {
+    await prefs.setString(_kVehicleId, vehicleId);
+    await prefs.setString(_kName, name);
+    await prefs.setBool(_kOnboarded, true);
+  }
+
+  Future<void> setVehicle(String vehicleId) => prefs.setString(_kVehicleId, vehicleId);
+
+  /// Last host used at a property, so the next draft needs no typing.
+  Host? hostFor(String propertyId) {
+    final raw = prefs.getStringList('host:$propertyId');
+    if (raw == null || raw.length != 2) return null;
+    return Host(name: raw[0].isEmpty ? null : raw[0], unit: raw[1].isEmpty ? null : raw[1]);
+  }
+
+  Future<void> rememberHost(String propertyId, Host host) =>
+      prefs.setStringList('host:$propertyId', [host.name ?? '', host.unit ?? '']);
+
+  Future<void> reset() async {
+    final id = userId;
+    await prefs.clear();
+    await prefs.setString(_kUserId, id);
+  }
+}
+
+final prefsProvider = Provider<SharedPreferences>((ref) => throw UnimplementedError('overridden in main'));
+final sessionProvider = Provider<Session>((ref) => Session(ref.watch(prefsProvider)));
+final apiProvider = Provider<ApiClient>((ref) => ApiClient(ref.watch(sessionProvider).userId));
+
+/// Bumped to refresh lists after a registration changes.
+final refreshTick = StateProvider<int>((ref) => 0);
+
+final passesProvider = FutureProvider.autoDispose<List<Registration>>((ref) async {
+  ref.watch(refreshTick);
+  final passes = await ref.watch(apiProvider).listPasses();
+  passes.sort((a, b) => (b.createdAt ?? DateTime(0)).compareTo(a.createdAt ?? DateTime(0)));
+  return passes;
+});
+
+final vehiclesProvider = FutureProvider.autoDispose<List<Vehicle>>((ref) async {
+  ref.watch(refreshTick);
+  return ref.watch(apiProvider).listVehicles();
+});
+
+final healthProvider = FutureProvider.autoDispose<bool>((ref) async {
+  try {
+    return await ref.watch(apiProvider).health();
+  } catch (_) {
+    return false;
+  }
+});
