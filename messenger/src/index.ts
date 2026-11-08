@@ -65,7 +65,9 @@ const server = http.createServer(async (req, res) => {
     }
     reply(res, 404, { error: { code: "not_found", message: "Not found." } });
   } catch (e) {
-    console.error("send failed:", (e as Error).name);
+    // Name plus a message with phone numbers and long tokens removed, so the cause is visible without leaking either.
+    const msg = String((e as Error).message ?? "").replace(/\+?\d[\d\s().-]{6,}\d/g, "<number>").replace(/[A-Za-z0-9_-]{30,}/g, "<token>");
+    console.error("send failed:", (e as Error).name, "-", msg.slice(0, 200));
     reply(res, 502, { error: { code: "validation_error", message: "Message could not be sent." } });
   }
 });

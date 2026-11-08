@@ -160,7 +160,20 @@ def ask_resident(user: dict, reg: dict):
     first = (user["name"].split() or ["Someone"])[0]
     text = (f"Hi, {first} is visiting and asked to register a guest car at Maverick Place. Reply with your unit "
             "number and last name (for example: 227A Adhikary), or NO if you aren't expecting a guest.")
-    spawn(send("resident_request", phone, text))
+    rid = reg["registration_id"]
+
+    async def go():
+        if await send("resident_request", phone, text):
+            return
+        # Nothing reached the resident: tell the visitor now instead of leaving them waiting.
+        from .. import store as store_mod
+        try:
+            store_mod.get_store().resident_send_failed(
+                rid, "We couldn't text that number. Check it, and make sure the resident can receive texts from "
+                     "Parkour. Then enter it again.")
+        except Exception as e:
+            log.warning("could not reset a registration after a failed send: %s", type(e).__name__)
+    spawn(go())
 
 
 async def handle_resident_reply(reg: dict, text: str):

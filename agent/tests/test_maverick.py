@@ -249,3 +249,22 @@ def test_parse_resident_reply():
     assert p("adhikary 227 a") == ("227A", "Adhikary")
     assert p("apt #12 O'Brien") == ("12", "O'Brien")
     assert p("Smith Jones 227A") is None and p("hello") is None and p("227A") is None
+
+
+def test_failed_text_puts_the_question_back(client, first_visit, monkeypatch):
+    """If Photon cannot text the resident, the visitor is asked again instead of waiting for nobody."""
+    from agent.services import messaging
+
+    async def failing_send(event, to_phone, text, attachment_path=None):
+        return False
+    monkeypatch.setattr(messaging, "send", failing_send)
+    rid = first_visit["registration_id"]
+    r = client.post(f"/registrations/{rid}/answer", json={"field": "resident_phone", "value": "+15557770001"}, headers=H)
+    assert r.status_code == 200
+    deadline = _time.time() + 5
+    reg = r.json()
+    while reg["needs_user"]["reason"] != "missing_info" and _time.time() < deadline:
+        _time.sleep(0.2)
+        reg = client.get(f"/registrations/{rid}", headers=H).json()
+    assert reg["status"] == "needs_user" and reg["needs_user"]["field"] == "resident_phone"
+    assert "couldn't text that number" in reg["needs_user"]["message"]

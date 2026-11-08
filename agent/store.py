@@ -247,6 +247,9 @@ class Store:
     def resident_reply(self, registration_id, unit, last_name):
         self._call("resident_reply", [registration_id, unit, last_name])
 
+    def resident_send_failed(self, registration_id, message):
+        self._call("resident_send_failed", [registration_id, message])
+
     def resident_decline(self, registration_id, code, message):
         self._call("resident_decline", [registration_id, code, message])
 

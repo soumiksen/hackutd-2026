@@ -6,6 +6,7 @@ import '../../core/widgets.dart';
 import '../../models/models.dart';
 import '../../services/location_service.dart';
 import '../../services/session.dart';
+import '../arrival/arrival_watcher.dart';
 import '../check1/check1_sheet.dart';
 import '../map/property_sheet.dart';
 
@@ -48,7 +49,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
   }
 
-  /// Demo mode: pretend we just parked at a seeded property near a campus.
+  /// Demo mode: pretend we just drove into a complex. It raises the same "Do you want to park here?" prompt a
+  /// real arrival does, so everything after it is the real flow: yes -> saved info check -> (Maverick Place, first
+  /// time) ask for the resident's phone -> resident texted -> guest registered.
   Future<void> simulate() async {
     final p = await showModalBottomSheet<Property>(
       context: context,
@@ -58,8 +61,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       builder: (_) => const _SimulateSheet(),
     );
     if (p != null && mounted) {
-      await startArrival(context, ref, p);
-      if (mounted) ref.read(refreshTick.notifier).state++;
+      ref.read(arrivalProvider.notifier).preview(p);
     }
   }
 

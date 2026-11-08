@@ -741,6 +741,14 @@ export const resident_reply = spacetimedb.reducer({
   setStatus(ctx, r, 'submitting', { host_unit: unit, host_name: last, needs_user_json: '', run_state: '' });
 });
 
+// The text to the resident could not be sent: go back to asking for the number instead of waiting for nobody.
+export const resident_send_failed = spacetimedb.reducer({ registration_id: t.string(), message: t.string() }, (ctx, a) => {
+  requireOwner(ctx);
+  const r = waitingForResident(ctx, a.registration_id);
+  const ask = { reason: 'missing_info', field: 'resident_phone', portal_url: null, message: a.message };
+  setStatus(ctx, r, 'needs_user', { needs_user_json: JSON.stringify(ask), run_state: '' });
+});
+
 export const resident_decline = spacetimedb.reducer({ registration_id: t.string(), code: t.string(), message: t.string() }, (ctx, a) => {
   requireOwner(ctx);
   const r = waitingForResident(ctx, a.registration_id);
