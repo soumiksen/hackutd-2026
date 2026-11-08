@@ -12,7 +12,8 @@ class LocationService {
       throw const LocationUnavailable('Location permission was denied. Use "Simulate arrival" instead.');
     }
     return Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, timeLimit: Duration(seconds: 10)));
+      locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, timeLimit: Duration(seconds: 10)),
+    );
   }
 }
 

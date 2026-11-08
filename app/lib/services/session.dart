@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
 import '../core/api_client.dart';
+import '../core/config.dart';
 import '../models/models.dart';
 
 /// Device identity, onboarding state and small local caches (shared_preferences).
@@ -74,6 +75,16 @@ final passesProvider = FutureProvider.autoDispose<List<Registration>>((ref) asyn
 final vehiclesProvider = FutureProvider.autoDispose<List<Vehicle>>((ref) async {
   ref.watch(refreshTick);
   return ref.watch(apiProvider).listVehicles();
+});
+
+/// Which campus the map and nearby list are centered on.
+final campusProvider = StateProvider<String>((ref) => 'UTD');
+
+/// Every seeded complex near a campus, sorted by distance from its center.
+final campusPropertiesProvider = FutureProvider.autoDispose.family<List<Property>, String>((ref, campus) async {
+  final (lat, lng) = Config.campuses[campus]!;
+  final all = await ref.watch(apiProvider).nearbyProperties(lat, lng, limit: 50);
+  return all.where((p) => p.campus == campus).toList();
 });
 
 final healthProvider = FutureProvider.autoDispose<bool>((ref) async {

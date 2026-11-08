@@ -56,9 +56,7 @@ Future<void> showCheck1(BuildContext context, Registration reg) => showModalBott
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
-      backgroundColor: P.ground,
       constraints: const BoxConstraints(maxWidth: 480),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (_) => Check1Sheet(initial: reg),
     );
 
@@ -115,29 +113,42 @@ class _Check1SheetState extends ConsumerState<Check1Sheet> {
   Widget build(BuildContext context) {
     final t = Theme.of(context).textTheme;
     return Padding(
-      padding: EdgeInsets.fromLTRB(20, 8, 20, 20 + MediaQuery.of(context).viewInsets.bottom),
+      padding: EdgeInsets.fromLTRB(20, 0, 20, 20 + MediaQuery.of(context).viewInsets.bottom),
       child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Center(
-          child: Container(
-              width: 40, height: 4, decoration: BoxDecoration(color: P.line, borderRadius: BorderRadius.circular(4))),
-        ),
-        const SizedBox(height: 16),
-        Row(children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(color: P.permit, borderRadius: BorderRadius.circular(99)),
-            child: const Text('CHECK 1 OF 2', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12, letterSpacing: 1)),
-          ),
-          const Spacer(),
-          PlateBadge(reg.vehicle.plate, reg.vehicle.state),
+        const Row(children: [
+          Pill('Check 1 of 2', bg: P.permit, caps: true),
+          Spacer(),
+          Text('One tap and the agent takes it from here', style: TextStyle(color: P.muted, fontSize: 12.5)),
         ]),
         const SizedBox(height: 14),
         Text(reg.property.name, style: t.headlineMedium),
-        const SizedBox(height: 8),
-        Text(reg.summary, style: t.titleMedium?.copyWith(fontWeight: FontWeight.w500, height: 1.35)),
+        const SizedBox(height: S.md),
+        AppCard(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Row(children: [
+              PlateBadge(reg.vehicle.plate, reg.vehicle.state, large: true),
+              const SizedBox(width: S.md),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(reg.vehicle.label, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+                  Text(
+                    [
+                      if (reg.role == Role.visitor) 'Guest' else 'Resident',
+                      if (reg.host?.unit != null) 'unit ${reg.host!.unit}',
+                      '${reg.durationHours}h',
+                    ].join(' · '),
+                    style: const TextStyle(color: P.muted, fontWeight: FontWeight.w600),
+                  ),
+                ]),
+              ),
+            ]),
+            const Padding(padding: EdgeInsets.symmetric(vertical: S.md), child: Divider()),
+            Text(reg.summary, style: t.bodyLarge?.copyWith(height: 1.4)),
+          ]),
+        ),
         if (reg.alternatives.isNotEmpty) ...[
           const SizedBox(height: 14),
-          Text('Not here?', style: t.labelMedium?.copyWith(color: P.muted)),
+          Text('NOT HERE?', style: t.labelMedium),
           const SizedBox(height: 6),
           Wrap(spacing: 8, runSpacing: 8, children: [
             for (final a in reg.alternatives)
@@ -157,7 +168,11 @@ class _Check1SheetState extends ConsumerState<Check1Sheet> {
           onPressed: busy ? null : register,
           child: busy
               ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white))
-              : const Text('Register'),
+              : const Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.bolt_rounded),
+                  SizedBox(width: 6),
+                  Text('Register my car'),
+                ]),
         ),
         const SizedBox(height: 10),
         Row(children: [
@@ -208,7 +223,7 @@ class _EditSheetState extends ConsumerState<EditSheet> {
     final t = Theme.of(context).textTheme;
     final vehicles = ref.watch(vehiclesProvider).valueOrNull ?? const <Vehicle>[];
     return Padding(
-      padding: EdgeInsets.fromLTRB(20, 20, 20, 20 + MediaQuery.of(context).viewInsets.bottom),
+      padding: EdgeInsets.fromLTRB(20, 0, 20, 20 + MediaQuery.of(context).viewInsets.bottom),
       child: SingleChildScrollView(
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: [
           Text('Edit registration', style: t.headlineSmall),

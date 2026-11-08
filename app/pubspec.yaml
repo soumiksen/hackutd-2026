@@ -44,6 +44,9 @@ dependencies:
   webview_flutter: ^4.14.1
   flutter_local_notifications: ^23.0.0
   google_fonts: ^9.0.0
+  flutter_map: ^8.3.2
+  latlong2: ^0.10.1
+  timezone: ^0.11.0
 
 dev_dependencies:
   flutter_test:
@@ -61,6 +64,9 @@ dev_dependencies:
 
 # The following section is specific to Flutter packages.
 flutter:
+  # Use Swift Package Manager for iOS plugins, so CocoaPods isn't needed.
+  config:
+    enable-swift-package-manager: true
 
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in

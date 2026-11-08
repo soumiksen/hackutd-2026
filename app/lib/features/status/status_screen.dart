@@ -80,17 +80,26 @@ class _StatusScreenState extends ConsumerState<StatusScreen> {
       appBar: AppBar(title: const Text('Registration')),
       body: PhoneFrame(
         child: ListView(padding: const EdgeInsets.fromLTRB(20, 4, 20, 32), children: [
-          Row(children: [
-            Expanded(child: Text(reg.property.name, style: t.headlineMedium)),
-            StatusChip(reg.status),
-          ]),
-          const SizedBox(height: 6),
+          Row(children: [StatusChip(reg.status)]),
+          const SizedBox(height: S.sm),
+          Text(reg.property.name, style: t.headlineMedium),
+          const SizedBox(height: S.sm),
           Row(children: [
             PlateBadge(reg.vehicle.plate, reg.vehicle.state),
             const SizedBox(width: 10),
             Expanded(child: Text(reg.vehicle.label, style: t.bodyLarge?.copyWith(color: P.muted))),
           ]),
-          const SizedBox(height: 20),
+          if (reg.status == RegistrationStatus.submitting) ...[
+            const SizedBox(height: S.lg),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(99),
+              child: const LinearProgressIndicator(minHeight: 4, color: P.agent, backgroundColor: P.agentSoft),
+            ),
+            const SizedBox(height: 6),
+            const Text('The agent is filling the portal for you. You can leave this screen.',
+                style: TextStyle(color: P.muted, fontSize: 13)),
+          ],
+          const SizedBox(height: S.xl),
           if (reg.status == RegistrationStatus.needsUser && reg.needsUser != null) ...[
             Check2Card(reg: reg, busy: busy, onAct: act),
             const SizedBox(height: 20),
@@ -116,7 +125,7 @@ class _StatusScreenState extends ConsumerState<StatusScreen> {
           ],
           Text('What the agent is doing', style: t.titleLarge),
           const SizedBox(height: 10),
-          Card(child: Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: _Steps(reg: reg))),
+          AppCard(padding: const EdgeInsets.all(S.lg), child: _Steps(reg: reg)),
           const SizedBox(height: 24),
           if (!reg.status.isActive)
             FilledButton(onPressed: () => Navigator.pop(context), child: const Text('Done')),
@@ -126,33 +135,90 @@ class _StatusScreenState extends ConsumerState<StatusScreen> {
   }
 }
 
+/// Vertical timeline: a dot per step joined by a line that fills in as steps finish.
 class _Steps extends StatelessWidget {
   final Registration reg;
   const _Steps({required this.reg});
   @override
   Widget build(BuildContext context) {
     final byName = {for (final s in reg.steps) s.name: s};
+    final names = _stepLabels.keys.toList();
     return Column(children: [
-      for (final name in _stepLabels.keys)
+      for (final (i, name) in names.indexed)
         Builder(builder: (_) {
           final s = byName[name];
           final status = s?.status ?? StepStatus.pending;
-          final Widget icon = switch (status) {
-            StepStatus.done => const Icon(Icons.check_circle, color: P.sign),
-            StepStatus.running => const SizedBox(
-                width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5, color: P.agent)),
-            StepStatus.error => const Icon(Icons.cancel, color: P.tow),
-            StepStatus.pending => const Icon(Icons.radio_button_unchecked, color: P.line),
+          final nextDone = i + 1 < names.length && (byName[names[i + 1]]?.status ?? StepStatus.pending) != StepStatus.pending;
+          final last = i == names.length - 1;
+          final (Color fill, Color fg) = switch (status) {
+            StepStatus.done => (P.sign, Colors.white),
+            StepStatus.running => (P.agentSoft, P.agent),
+            StepStatus.error => (P.tow, Colors.white),
+            StepStatus.pending => (P.ground, P.faint),
           };
-          return ListTile(
-            dense: true,
-            leading: SizedBox(width: 28, child: Center(child: icon)),
-            title: Text(_stepLabels[name]!,
-                style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: status == StepStatus.running ? FontWeight.w700 : FontWeight.w500,
-                    color: status == StepStatus.pending ? P.muted : P.ink)),
-            trailing: s?.at == null ? null : Text(formatTime(DateTime.tryParse(s!.at!)), style: const TextStyle(color: P.muted)),
+          final Widget dot = AnimatedContainer(
+            duration: const Duration(milliseconds: 300),
+            width: 30,
+            height: 30,
+            decoration: BoxDecoration(
+              color: fill,
+              shape: BoxShape.circle,
+              border: Border.all(color: status == StepStatus.pending ? P.line : fill, width: 2),
+            ),
+            alignment: Alignment.center,
+            child: switch (status) {
+              StepStatus.done => const Icon(Icons.check_rounded, size: 18, color: Colors.white),
+              StepStatus.error => const Icon(Icons.close_rounded, size: 18, color: Colors.white),
+              StepStatus.running =>
+                const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2.4, color: P.agent)),
+              StepStatus.pending =>
+                Text('${i + 1}', style: TextStyle(color: fg, fontWeight: FontWeight.w800, fontSize: 13)),
+            },
+          );
+          return IntrinsicHeight(
+            child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              SizedBox(
+                width: 30,
+                child: Column(children: [
+                  dot,
+                  if (!last)
+                    Expanded(
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 400),
+                        width: 3,
+                        margin: const EdgeInsets.symmetric(vertical: 3),
+                        decoration: BoxDecoration(
+                          color: status == StepStatus.done && nextDone ? P.sign : P.line,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                ]),
+              ),
+              const SizedBox(width: S.md),
+              Expanded(
+                child: Padding(
+                  padding: EdgeInsets.only(top: 5, bottom: last ? 0 : S.lg),
+                  child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Expanded(
+                      child: Text(_stepLabels[name]!,
+                          style: TextStyle(
+                              fontSize: 15.5,
+                              fontWeight: status == StepStatus.pending ? FontWeight.w600 : FontWeight.w800,
+                              color: switch (status) {
+                                StepStatus.pending => P.muted,
+                                StepStatus.running => P.agent,
+                                StepStatus.error => P.tow,
+                                StepStatus.done => P.ink,
+                              })),
+                    ),
+                    if (s?.at != null)
+                      Text(formatTime(DateTime.tryParse(s!.at!)),
+                          style: const TextStyle(color: P.muted, fontSize: 13, fontWeight: FontWeight.w600)),
+                  ]),
+                ),
+              ),
+            ]),
           );
         }),
     ]);
@@ -166,29 +232,56 @@ class _Confirmed extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final t = Theme.of(context).textTheme;
     final proof = reg.proof;
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(color: P.signSoft, borderRadius: BorderRadius.circular(18)),
+    return Appear(
+      child: Container(
+      padding: const EdgeInsets.all(S.xl),
+      decoration: BoxDecoration(
+        color: P.signSoft,
+        borderRadius: BorderRadius.circular(S.rLg),
+        border: Border.all(color: P.sign.withValues(alpha: 0.25), width: 1.5),
+      ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Row(children: [
-          Icon(Icons.verified, color: P.sign),
-          SizedBox(width: 8),
-          Text("You're registered", style: TextStyle(color: P.sign, fontWeight: FontWeight.w800, fontSize: 18)),
+        Row(children: [
+          TweenAnimationBuilder<double>(
+            tween: Tween(begin: 0.4, end: 1),
+            duration: const Duration(milliseconds: 600),
+            curve: Curves.elasticOut,
+            builder: (_, v, c) => Transform.scale(scale: v, child: c),
+            child: Container(
+              width: 44,
+              height: 44,
+              decoration: const BoxDecoration(color: P.sign, shape: BoxShape.circle),
+              child: const Icon(Icons.check_rounded, color: Colors.white, size: 28),
+            ),
+          ),
+          const SizedBox(width: S.md),
+          const Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text("You're registered", style: TextStyle(color: P.signDeep, fontWeight: FontWeight.w800, fontSize: 20)),
+              Text('Park with peace of mind. Proof is saved.', style: TextStyle(color: P.sign, fontWeight: FontWeight.w600)),
+            ]),
+          ),
         ]),
-        const SizedBox(height: 12),
-        Text('Confirmation', style: t.labelMedium?.copyWith(color: P.muted)),
+        const SizedBox(height: S.lg),
+        Text('CONFIRMATION', style: t.labelMedium),
         SelectableText(proof?.confirmationNumber ?? '-',
             style: const TextStyle(fontFamily: 'monospace', fontSize: 30, fontWeight: FontWeight.w800, letterSpacing: 1)),
         if (proof?.expiresAt != null) ...[
-          const SizedBox(height: 6),
-          Text('Valid until ${formatTime(proof!.expiresAt)}', style: t.titleMedium),
-          Countdown(proof.expiresAt!, style: const TextStyle(color: P.sign, fontWeight: FontWeight.w700)),
+          const SizedBox(height: S.sm),
+          Row(children: [
+            const Icon(Icons.timer_outlined, size: 18, color: P.sign),
+            const SizedBox(width: 6),
+            Countdown(proof!.expiresAt!, style: const TextStyle(color: P.sign, fontWeight: FontWeight.w800, fontSize: 16)),
+            const Spacer(),
+            Text('until ${formatTime(proof.expiresAt)}', style: const TextStyle(fontWeight: FontWeight.w700)),
+          ]),
         ],
         if (proof != null && proof.screenshotUrls.isNotEmpty) ...[
           const SizedBox(height: 14),
           ProofImage(url: ref.read(apiProvider).proofUrl(proof.screenshotUrls.first)),
         ],
       ]),
+      ),
     );
   }
 }
