@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>MockPark Guest Registration</title>
+<link rel="stylesheet" href="../shared.css">
+</head>
+<body class="v-mockpark">
+<div class="demo-banner">Demo portal for the Parkour hackathon project. Not a real parking service.</div>
+<header class="brand"><div class="in">
+  <svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true"><rect width="34" height="34" rx="9" fill="#fff" fill-opacity=".16"/><path d="M11 25V9h7a5 5 0 0 1 0 10h-7" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  <div><div class="name">MockPark</div><div class="sub">Visitor vehicle registration</div></div>
+</div></header>
+
+<main>
+  <div class="card" id="panel">
+    <div>
+      <h1>Register a guest vehicle</h1>
+      <p class="prop" id="prop-line">Loading property…</p>
+    </div>
+    <p class="error" data-testid="error" id="error" hidden></p>
+
+    <form id="reg" novalidate hidden>
+      <fieldset>
+        <legend>Vehicle</legend>
+        <div class="grid2">
+          <div class="field"><label for="plate">License plate</label><input id="plate" name="plate" autocomplete="off" autocapitalize="characters"></div>
+          <div class="field"><label for="state">State</label><input id="state" name="state" maxlength="2" autocapitalize="characters" placeholder="TX"></div>
+          <div class="field"><label for="make">Make</label><input id="make" name="make"></div>
+          <div class="field"><label for="model">Model</label><input id="model" name="model"></div>
+          <div class="field"><label for="color">Color</label><input id="color" name="color"></div>
+          <div class="field"><label for="duration_hours">Hours to park</label><input id="duration_hours" name="duration_hours" type="number" min="1" step="1" inputmode="numeric"><span class="hint" id="max-hint"></span></div>
+        </div>
+      </fieldset>
+      <fieldset>
+        <legend>Visit</legend>
+        <div class="grid2">
+          <div class="field"><label for="host_unit">Resident unit</label><input id="host_unit" name="host_unit"></div>
+          <div class="field"><label for="host_name">Resident name</label><input id="host_name" name="host_name"></div>
+        </div>
+      </fieldset>
+      <fieldset>
+        <legend>Guest</legend>
+        <div class="grid2">
+          <div class="field"><label for="guest_name">Your full name</label><input id="guest_name" name="guest_name" autocomplete="name"></div>
+          <div class="field"><label for="phone">Mobile phone</label><input id="phone" name="phone" type="tel" autocomplete="tel"></div>
+          <div class="field span2"><label for="email">Email (optional)</label><input id="email" name="email" type="email" autocomplete="email"></div>
+        </div>
+      </fieldset>
+      <div id="captcha" hidden></div>
+      <div class="actions"><button type="submit">Register vehicle</button></div>
+    </form>
+  </div>
+</main>
+<footer><span>MockPark is fictional. Made for Parkour at HackUTD 2026.</span><details class="demo-tools"><summary>Demo tools</summary><button type="button" id="reset-nights">Reset demo night counters</button></details></footer>
+
+<script src="../shared.js"></script>
+<script>
+(function () {
+  var form = document.getElementById("reg");
+  var panel = document.getElementById("panel");
+  var err = document.getElementById("error");
+  var code = (PK.params.get("property") || "").toUpperCase();
+  var captcha = null;
+  PK.wireFooter();
+
+  PK.loadRules().then(function (rules) {
+    var rule = rules[code];
+    if (!rule || rule.vendor_id !== "mockpark") {
+      document.getElementById("prop-line").textContent = "Property code: " + (code || "none");
+      PK.showError(err, "Unknown property code. Check the code on the parking sign.", "property");
+      return;
+    }
+    document.getElementById("prop-line").innerHTML = "";
+    var b = document.createElement("b"); b.textContent = rule.name;
+    document.getElementById("prop-line").append(b, " · code " + code);
+    if (rule.max_duration_hours) document.getElementById("max-hint").textContent = "Maximum " + rule.max_duration_hours + " hours";
+    document.querySelector('label[for="host_unit"]').textContent = rule.requires_host_unit ? "Resident unit" : "Resident unit (optional)";
+
+    PK.CANONICAL.forEach(function (f) {
+      var v = PK.params.get(f);
+      if (v !== null && form.elements[f]) form.elements[f].value = v;
+    });
+    if (PK.params.get("captcha") === "on") captcha = PK.mountCaptcha(document.getElementById("captcha"));
+    form.hidden = false;
+
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      PK.clearError(err);
+      var values = { _code: code };
+      PK.CANONICAL.forEach(function (f) { values[f] = form.elements[f].value; });
+      var r = PK.process(values, rule, captcha);
+      if (r.ok) { PK.renderSuccess(panel, r); return; }
+      if (r.page) { PK.renderFailPage(panel, r.error); return; }
+      PK.showError(err, r.error, r.field);
+    });
+  }).catch(function () {
+    PK.showError(err, "The portal could not load its property list. Serve the mock-portal folder over HTTP.", null);
+  });
+})();
+</script>
+</body>
+</html>

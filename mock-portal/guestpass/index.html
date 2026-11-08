@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>GuestPass Visitor Check-in</title>
+<link rel="stylesheet" href="../shared.css">
+</head>
+<body class="v-guestpass">
+<div class="demo-banner">Demo portal for the Parkour hackathon project. Not a real parking service.</div>
+<header class="brand"><div class="in">
+  <svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true"><path d="M5 10h24v4a3 3 0 0 0 0 6v4H5v-4a3 3 0 0 0 0-6z" fill="none" stroke="#fff" stroke-width="2.4" stroke-linejoin="round"/><path d="M20 10v14" stroke="#fff" stroke-width="2" stroke-dasharray="2 2.5"/></svg>
+  <div><div class="name">GuestPass</div><div class="sub">Visitor check-in for residential communities</div></div>
+</div></header>
+
+<main>
+  <div class="card" id="panel">
+    <div>
+      <h1>Visitor check-in</h1>
+      <p class="prop" id="prop-line">Loading community…</p>
+    </div>
+    <div class="steps" aria-hidden="true"><span id="s1" class="on">1 · Your visit</span><span id="s2">2 · Your car</span></div>
+    <p class="error" data-testid="error" id="error" hidden></p>
+
+    <form id="gp-form" novalidate hidden>
+      <section id="gp-step-1">
+        <fieldset>
+          <legend>Who are you visiting?</legend>
+          <div class="field"><label for="gp-community">Community code</label><input id="gp-community" name="community_code" readonly></div>
+          <div class="grid2">
+            <div class="field"><label for="gp-apt">Apartment / suite #</label><input id="gp-apt" name="res_apt"></div>
+            <div class="field"><label for="gp-lname">Resident's last name</label><input id="gp-lname" name="res_lname"></div>
+          </div>
+          <div class="field"><label for="gp-visitor">Visitor's name</label><input id="gp-visitor" name="visitor_full" autocomplete="name"></div>
+          <div class="field"><label for="gp-stay">Length of stay (hours)</label><input id="gp-stay" name="stay_len" type="number" min="1" step="1" inputmode="numeric"><span class="hint" id="max-hint"></span></div>
+        </fieldset>
+        <div class="actions"><button type="button" id="gp-next">Continue</button></div>
+      </section>
+
+      <section id="gp-step-2" hidden>
+        <fieldset>
+          <legend>Vehicle and contact</legend>
+          <div class="grid2">
+            <div class="field"><label for="gp-tag">Vehicle tag</label><input id="gp-tag" name="tag_no" autocomplete="off" autocapitalize="characters"></div>
+            <div class="field"><label for="gp-region">Issuing state</label><input id="gp-region" name="tag_region" maxlength="2" autocapitalize="characters"></div>
+            <div class="field"><label for="gp-mfr">Manufacturer</label><input id="gp-mfr" name="veh_mfr"></div>
+            <div class="field"><label for="gp-line">Model line</label><input id="gp-line" name="veh_line"></div>
+            <div class="field"><label for="gp-paint">Paint color</label><input id="gp-paint" name="veh_paint"></div>
+            <div class="field"><label for="gp-tel">Contact number</label><input id="gp-tel" name="contact_tel" type="tel" autocomplete="tel"></div>
+          </div>
+          <div class="field"><label for="gp-mail">Receipt email (optional)</label><input id="gp-mail" name="contact_mail" type="email" autocomplete="email"></div>
+        </fieldset>
+        <div id="captcha" hidden></div>
+        <div class="actions"><button type="button" class="secondary" id="gp-back">Back</button><button type="submit" id="gp-submit">Request pass</button></div>
+      </section>
+    </form>
+  </div>
+</main>
+<footer><span>GuestPass is fictional. Made for Parkour at HackUTD 2026.</span><details class="demo-tools"><summary>Demo tools</summary><button type="button" id="reset-nights">Reset demo night counters</button></details></footer>
+
+<script src="../shared.js"></script>
+<script>
+(function () {
+  /* canonical field -> this vendor's input name */
+  var MAP = {
+    host_unit: "res_apt", host_name: "res_lname", guest_name: "visitor_full", duration_hours: "stay_len",
+    plate: "tag_no", state: "tag_region", make: "veh_mfr", model: "veh_line", color: "veh_paint",
+    phone: "contact_tel", email: "contact_mail"
+  };
+  var STEP1 = ["guest_name", "duration_hours"];
+
+  var form = document.getElementById("gp-form");
+  var panel = document.getElementById("panel");
+  var err = document.getElementById("error");
+  var step1 = document.getElementById("gp-step-1");
+  var step2 = document.getElementById("gp-step-2");
+  var code = (PK.params.get("property") || "").toUpperCase();
+  var captcha = null;
+  PK.wireFooter();
+
+  function val(canon) { return form.elements[MAP[canon]].value; }
+  function go(n) {
+    step1.hidden = n !== 1; step2.hidden = n !== 2;
+    document.getElementById("s1").className = n === 1 ? "on" : "";
+    document.getElementById("s2").className = n === 2 ? "on" : "";
+  }
+
+  PK.loadRules().then(function (rules) {
+    var rule = rules[code];
+    if (!rule || rule.vendor_id !== "guestpass") {
+      document.getElementById("prop-line").textContent = "Community code: " + (code || "none");
+      PK.showError(err, "Unknown property code. Check the code on the parking sign.", "property");
+      return;
+    }
+    var line = document.getElementById("prop-line");
+    line.textContent = "";
+    var b = document.createElement("b"); b.textContent = rule.name;
+    line.append(b);
+    form.elements.community_code.value = code;
+    if (rule.max_duration_hours) document.getElementById("max-hint").textContent = "Up to " + rule.max_duration_hours + " hours";
+    var required1 = STEP1.slice();
+    if (rule.requires_host_unit) required1.unshift("host_unit");
+    else document.querySelector('label[for="gp-apt"]').textContent = "Apartment / suite # (optional)";
+
+    Object.keys(MAP).forEach(function (canon) {
+      var v = PK.params.get(canon);
+      if (v !== null) form.elements[MAP[canon]].value = v;
+    });
+    if (PK.params.get("captcha") === "on") captcha = PK.mountCaptcha(document.getElementById("captcha"));
+    form.hidden = false;
+
+    document.getElementById("gp-next").addEventListener("click", function () {
+      PK.clearError(err);
+      for (var i = 0; i < required1.length; i++) {
+        if (!String(val(required1[i])).trim()) {
+          PK.showError(err, "Missing required field: " + required1[i], required1[i]);
+          return;
+        }
+      }
+      go(2);
+    });
+    document.getElementById("gp-back").addEventListener("click", function () { PK.clearError(err); go(1); });
+
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      if (!step1.hidden) { document.getElementById("gp-next").click(); return; }
+      PK.clearError(err);
+      var values = { _code: code };
+      Object.keys(MAP).forEach(function (canon) { values[canon] = val(canon); });
+      var r = PK.process(values, rule, captcha);
+      if (r.ok) { PK.renderSuccess(panel, r); return; }
+      if (r.page) { PK.renderFailPage(panel, r.error); return; }
+      if (r.field && STEP1.concat(["host_unit", "host_name"]).indexOf(r.field) !== -1) go(1);
+      PK.showError(err, r.error, r.field);
+    });
+  }).catch(function () {
+    PK.showError(err, "The portal could not load its community list. Serve the mock-portal folder over HTTP.", null);
+  });
+})();
+</script>
+</body>
+</html>
