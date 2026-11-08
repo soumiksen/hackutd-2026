@@ -1,0 +1,4 @@
+{
+  "note": "Hosts the agent may open. Add the team's Cloudflare Tunnel hostname here once it exists.",
+  "domains": ["localhost", "127.0.0.1", "soumiksen.github.io"]
+}

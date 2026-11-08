@@ -1,0 +1,188 @@
+{
+  "note": "Fictional demo users. Real phone numbers live only in the local .env under phone_env_var. visit_history is reference data for the pitch; the backend counts nights from its own database.",
+  "users": [
+    {
+      "user_id": "demo-user-1",
+      "name": "Maya Lee",
+      "phone_env_var": "DEMO_USER_1_PHONE",
+      "email": "maya.demo@example.com",
+      "consent_register": true,
+      "spending_cap_usd": 10,
+      "notify_channel": "both",
+      "vehicles": [
+        {
+          "vehicle_id": "veh_demo_1",
+          "plate": "ABC1234",
+          "state": "TX",
+          "make": "Honda",
+          "model": "Civic",
+          "color": "Blue",
+          "year": 2019
+        }
+      ],
+      "hosts": [
+        {
+          "property_id": "utd-001",
+          "name": "Jordan Park",
+          "unit": "214"
+        },
+        {
+          "property_id": "utd-009",
+          "name": "Sam Rivera",
+          "unit": "1107"
+        },
+        {
+          "property_id": "uta-001",
+          "name": "Alex Chen",
+          "unit": "B12"
+        }
+      ],
+      "visit_history": [
+        {
+          "property_id": "utd-001",
+          "nights_this_month": 1
+        },
+        {
+          "property_id": "utd-002",
+          "nights_this_month": 2
+        },
+        {
+          "property_id": "utd-009",
+          "nights_this_month": 0
+        }
+      ]
+    },
+    {
+      "user_id": "demo-user-2",
+      "name": "Dev Patel",
+      "phone_env_var": "DEMO_USER_2_PHONE",
+      "email": "dev.demo@example.com",
+      "consent_register": true,
+      "spending_cap_usd": 5,
+      "notify_channel": "message",
+      "vehicles": [
+        {
+          "vehicle_id": "veh_demo_2",
+          "plate": "XYZ7788",
+          "state": "TX",
+          "make": "Toyota",
+          "model": "Corolla",
+          "color": "Silver",
+          "year": 2021
+        },
+        {
+          "vehicle_id": "veh_demo_3",
+          "plate": "LMN4455",
+          "state": "TX",
+          "make": "Ford",
+          "model": "Escape",
+          "color": "Black",
+          "year": 2017
+        }
+      ],
+      "hosts": [
+        {
+          "property_id": "utd-004",
+          "name": "Riley Brooks",
+          "unit": "3021"
+        },
+        {
+          "property_id": "utd-006",
+          "name": "Casey Nguyen",
+          "unit": "418"
+        }
+      ],
+      "visit_history": [
+        {
+          "property_id": "utd-004",
+          "nights_this_month": 3
+        },
+        {
+          "property_id": "utd-006",
+          "nights_this_month": 1
+        }
+      ]
+    }
+  ],
+  "scenarios": [
+    {
+      "id": 1,
+      "name": "Happy path, mockpark",
+      "user_id": "demo-user-1",
+      "vehicle_id": "veh_demo_1",
+      "property_id": "utd-001",
+      "url_params": {
+        "property": "NSA481"
+      },
+      "expect": "confirmed"
+    },
+    {
+      "id": 2,
+      "name": "CAPTCHA hand-off",
+      "user_id": "demo-user-1",
+      "vehicle_id": "veh_demo_1",
+      "property_id": "utd-001",
+      "url_params": {
+        "property": "NSA481",
+        "captcha": "on"
+      },
+      "expect": "needs_user:captcha, then confirmed after resume",
+      "note": "Run the backend with DEMO_PORTAL_PARAMS=captcha=on; resume drops it automatically."
+    },
+    {
+      "id": 3,
+      "name": "guestpass layout (Nemotron fallback)",
+      "user_id": "demo-user-1",
+      "vehicle_id": "veh_demo_1",
+      "property_id": "utd-009",
+      "url_params": {
+        "property": "MHN734"
+      },
+      "expect": "confirmed"
+    },
+    {
+      "id": 4,
+      "name": "Guest-night limit",
+      "user_id": "demo-user-1",
+      "vehicle_id": "veh_demo_1",
+      "property_id": "utd-002",
+      "url_params": {
+        "property": "NSP272"
+      },
+      "expect": "utd-002 allows 2 nights. Register plate ABC1234 there twice; the third draft is refused by the backend's guest-night check. To show the portal-side rule_conflict instead, register the same plate from demo-user-2: the portal counter (kept in proofs/.portal_state.json) hits the limit and the agent asks to override."
+    },
+    {
+      "id": 5,
+      "name": "Adjacent complexes, wrong-property switch",
+      "user_id": "demo-user-1",
+      "vehicle_id": "veh_demo_1",
+      "property_id": "utd-001",
+      "arrival": {
+        "lat": 32.99505,
+        "lng": -96.74775
+      },
+      "alternative_property_id": "utd-002",
+      "expect": "draft at utd-001 with utd-002 in alternatives"
+    },
+    {
+      "id": 6,
+      "name": "Unknown domain rejected",
+      "user_id": "demo-user-2",
+      "vehicle_id": "veh_demo_2",
+      "property_id": "utd-004",
+      "url": "https://mockpark-login.xyz/mockpark/",
+      "expect": "failed:unknown_domain"
+    },
+    {
+      "id": 7,
+      "name": "Reply YES in Messages",
+      "user_id": "demo-user-2",
+      "vehicle_id": "veh_demo_2",
+      "property_id": "utd-004",
+      "url_params": {
+        "property": "MQW318"
+      },
+      "expect": "awaiting_confirm -> submitting after YES reply -> confirmed"
+    }
+  ]
+}
