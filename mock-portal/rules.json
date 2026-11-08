@@ -1,0 +1,203 @@
+{
+  "generated_from": "data/properties.json",
+  "properties": {
+    "NSA481": {
+      "property_id": "utd-001",
+      "name": "Northside Apartments",
+      "vendor_id": "mockpark",
+      "max_nights_per_month": 3,
+      "max_duration_hours": 24,
+      "requires_host_unit": true,
+      "guest_hours": "24/7"
+    },
+    "NSP272": {
+      "property_id": "utd-002",
+      "name": "Northside Plus",
+      "vendor_id": "guestpass",
+      "max_nights_per_month": 2,
+      "max_duration_hours": 12,
+      "requires_host_unit": true,
+      "guest_hours": "Registration required 10 PM-6 AM"
+    },
+    "AXS905": {
+      "property_id": "utd-003",
+      "name": "Axis",
+      "vendor_id": "mockpark",
+      "max_nights_per_month": 3,
+      "max_duration_hours": 24,
+      "requires_host_unit": true,
+      "guest_hours": "24/7"
+    },
+    "MQW318": {
+      "property_id": "utd-004",
+      "name": "Marquis at Waterview",
+      "vendor_id": "mockpark",
+      "max_nights_per_month": 8,
+      "max_duration_hours": 48,
+      "requires_host_unit": false,
+      "guest_hours": "24/7"
+    },
+    "PRA664": {
+      "property_id": "utd-005",
+      "name": "The Pradera",
+      "vendor_id": "mockpark",
+      "max_nights_per_month": 3,
+      "max_duration_hours": 24,
+      "requires_host_unit": true,
+      "guest_hours": "24/7"
+    },
+    "JCC127": {
+      "property_id": "utd-006",
+      "name": "The James at Canyon Creek",
+      "vendor_id": "guestpass",
+      "max_nights_per_month": 2,
+      "max_duration_hours": 12,
+      "requires_host_unit": true,
+      "guest_hours": "Registration required 10 PM-6 AM"
+    },
+    "KCC550": {
+      "property_id": "utd-007",
+      "name": "The Knoll on Canyon Creek",
+      "vendor_id": "mockpark",
+      "max_nights_per_month": 8,
+      "max_duration_hours": 48,
+      "requires_host_unit": false,
+      "guest_hours": "24/7"
+    },
+    "RAA203": {
+      "property_id": "utd-008",
+      "name": "Royal Arms Apartments",
+      "vendor_id": "mockpark",
+      "max_nights_per_month": 3,
+      "max_duration_hours": 24,
+      "requires_host_unit": true,
+      "guest_hours": "24/7"
+    },
+    "MHN734": {
+      "property_id": "utd-009",
+      "name": "MAA Highlands North",
+      "vendor_id": "guestpass",
+      "max_nights_per_month": 3,
+      "max_duration_hours": 24,
+      "requires_host_unit": true,
+      "guest_hours": "24/7"
+    },
+    "AWP419": {
+      "property_id": "utd-010",
+      "name": "Ashwood Park",
+      "vendor_id": "mockpark",
+      "max_nights_per_month": 8,
+      "max_duration_hours": 48,
+      "requires_host_unit": false,
+      "guest_hours": "24/7"
+    },
+    "PRL866": {
+      "property_id": "utd-011",
+      "name": "The Pearl on Frankford",
+      "vendor_id": "mockpark",
+      "max_nights_per_month": 2,
+      "max_duration_hours": 12,
+      "requires_host_unit": true,
+      "guest_hours": "Registration required 10 PM-6 AM"
+    },
+    "PHA351": {
+      "property_id": "utd-012",
+      "name": "Preston Heights Apartments",
+      "vendor_id": "guestpass",
+      "max_nights_per_month": 3,
+      "max_duration_hours": 24,
+      "requires_host_unit": true,
+      "guest_hours": "24/7"
+    },
+    "MOM628": {
+      "property_id": "utd-013",
+      "name": "Madison on Melrose",
+      "vendor_id": "mockpark",
+      "max_nights_per_month": 3,
+      "max_duration_hours": 24,
+      "requires_host_unit": true,
+      "guest_hours": "24/7"
+    },
+    "FAP190": {
+      "property_id": "utd-014",
+      "name": "The Flats at Palisades",
+      "vendor_id": "mockpark",
+      "max_nights_per_month": 8,
+      "max_duration_hours": 48,
+      "requires_host_unit": false,
+      "guest_hours": "24/7"
+    },
+    "JGP477": {
+      "property_id": "utd-015",
+      "name": "Jefferson Galatyn Park",
+      "vendor_id": "guestpass",
+      "max_nights_per_month": 3,
+      "max_duration_hours": 24,
+      "requires_host_unit": true,
+      "guest_hours": "24/7"
+    },
+    "VSC832": {
+      "property_id": "utd-016",
+      "name": "Vantage at Spring Creek",
+      "vendor_id": "mockpark",
+      "max_nights_per_month": 3,
+      "max_duration_hours": 24,
+      "requires_host_unit": true,
+      "guest_hours": "24/7"
+    },
+    "CTC512": {
+      "property_id": "uta-001",
+      "name": "Centennial Court",
+      "vendor_id": "mockpark",
+      "max_nights_per_month": 3,
+      "max_duration_hours": 24,
+      "requires_host_unit": true,
+      "guest_hours": "24/7"
+    },
+    "MIT848": {
+      "property_id": "uta-002",
+      "name": "848 Mitchell",
+      "vendor_id": "guestpass",
+      "max_nights_per_month": 2,
+      "max_duration_hours": 12,
+      "requires_host_unit": true,
+      "guest_hours": "Registration required 10 PM-6 AM"
+    },
+    "LVA307": {
+      "property_id": "uta-003",
+      "name": "Liv+ Arlington",
+      "vendor_id": "mockpark",
+      "max_nights_per_month": 3,
+      "max_duration_hours": 24,
+      "requires_host_unit": true,
+      "guest_hours": "24/7"
+    },
+    "BDR404": {
+      "property_id": "uta-004",
+      "name": "404 Border Apartments",
+      "vendor_id": "mockpark",
+      "max_nights_per_month": 8,
+      "max_duration_hours": 48,
+      "requires_host_unit": false,
+      "guest_hours": "24/7"
+    },
+    "DEA615": {
+      "property_id": "uta-005",
+      "name": "The Dean Apartments",
+      "vendor_id": "guestpass",
+      "max_nights_per_month": 3,
+      "max_duration_hours": 24,
+      "requires_host_unit": true,
+      "guest_hours": "24/7"
+    },
+    "RCH238": {
+      "property_id": "uta-006",
+      "name": "Richlyn Apartments",
+      "vendor_id": "mockpark",
+      "max_nights_per_month": 2,
+      "max_duration_hours": 12,
+      "requires_host_unit": true,
+      "guest_hours": "Registration required 10 PM-6 AM"
+    }
+  }
+}
